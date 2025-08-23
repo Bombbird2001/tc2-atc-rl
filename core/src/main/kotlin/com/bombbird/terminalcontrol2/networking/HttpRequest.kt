@@ -298,6 +298,7 @@ object HttpRequest {
      */
     @OptIn(ExperimentalStdlibApi::class)
     fun sendCrashReport(e: Exception, crashLocation: String, multiplayerType: String) {
+        return
         e.printStackTrace()
         val platformName = when (Gdx.app.type) {
             Application.ApplicationType.Android -> "Android"

@@ -34,7 +34,6 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
 import kotlin.math.min
-import kotlin.math.roundToLong
 
 /**
  * Main game server class, responsible for handling all game logic, updates, sending required game data information to
@@ -243,6 +242,7 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
     // var timeCounter = 0f
     // var frames = 0
     private var startTime = -1L
+    private val pythonGymBridge = PythonGymnasiumBridge
 
     // Loading screen callbacks
     var serverStartedCallback: (() -> Unit)? = null
@@ -626,6 +626,8 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
         var slowUpdateSlot = -1L
         var metarUpdateTime = 0
         var autosaveTime = 0
+//        var frametimeSum = 0L
+//        var frameCount = 0L
         while (loopRunning.get()) {
             // println("Looping")
             var currMs = System.currentTimeMillis()
@@ -638,8 +640,8 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
                 // Since System.currentTimeMillis() is not guaranteed to be monotonic, we need to ensure that deltaTime
                 // is always positive: https://stackoverflow.com/questions/2978598/will-system-currenttimemillis-always-return-a-value-previous-calls
                 // Otherwise some strange bugs may appear
-                prevMs = min(currMs - 1, prevMs)
-                update((currMs - prevMs) / 1000f)
+//                prevMs = min(currMs - 1, prevMs)
+                update(1 / 30f)
 
                 val currFastSlot = (currMs - startTime) / (SERVER_TO_CLIENT_UPDATE_INTERVAL_FAST).toLong()
                 if (currFastSlot > fastUpdateSlot) {
@@ -668,6 +670,9 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
                     saveGame(this)
                     autosaveTime -= AUTOSAVE_INTERVAL_MIN * 60 * 1000
                 }
+
+//                frameCount++
+//                frametimeSum += (System.currentTimeMillis() - currMs)
             }
 
             if (gamePaused.get()) lock.withLock {
@@ -680,16 +685,10 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
             }
 
             prevMs = currMs
-            // println("$UPDATE_INTERVAL $currMs $startTime")
-            val currFrame = (currMs - startTime) * SERVER_UPDATE_RATE / 1000
-            val nextFrameTime = (UPDATE_INTERVAL - (currMs - startTime) % UPDATE_INTERVAL)
 
-            // For cases where rounding errors result in a nextFrameTime of almost 0 - take the time needed to 2 frames later instead
-            if (nextFrameTime < 0.1 * UPDATE_INTERVAL) {
-                var newTime = (currFrame + 2) * 1000 / SERVER_UPDATE_RATE + startTime - currMs
-                if (newTime > 24) newTime -= 1000 / SERVER_UPDATE_RATE
-                Thread.sleep(newTime)
-            } else Thread.sleep(nextFrameTime.roundToLong())
+            Thread.sleep(2)
+
+//            if (currMs % 100 == 0L) println("FPS: ${frameCount * 1000 / frametimeSum}")
         }
     }
 
@@ -700,15 +699,17 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
         // println("Delta: $delta Average frame time: ${timeCounter / frames} Average FPS: ${frames / timeCounter}")
         // println(1 / delta)
 
-        // Prevent lag spikes from causing huge deviations in simulation
-        val simulationSpeed = if (maxPlayersAllowed == 1.toByte()) gameSpeed else 1
-        val cappedDelta = min(delta * simulationSpeed, 1f / 10)
-
-        engine.update(cappedDelta)
+        engine.update(delta)
 
         // Process pending runnables
         while (true) {
             pendingRunnablesQueue.poll()?.run() ?: break
+        }
+
+        pythonGymBridge.update(aircraft) {
+            // TODO Reset function - despawn current aircraft, create new aircraft
+
+            return@update aircraft
         }
     }
 

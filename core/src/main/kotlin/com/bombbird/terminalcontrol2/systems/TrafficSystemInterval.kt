@@ -63,6 +63,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
     override fun updateInterval() {
         GAME.gameServer?.apply {
             val airportArrivalStats = arrivalStatsFamilyEntities.getEntities()
+            trafficMode = TrafficMode.ARRIVALS_TO_CONTROL
             when (trafficMode) {
                 TrafficMode.NORMAL -> {
                     // Arrival spawning timer - normal traffic mode only
@@ -78,17 +79,20 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 TrafficMode.ARRIVALS_TO_CONTROL -> {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
+                        // Limit to 1 aircraft spawn at TCWS
+                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.arrivalSpawnTimer -= interval
-                        if (arptArrStats.arrivalSpawnTimer > 0) continue
+                        arptArrStats.targetTrafficValue = 1
+//                        arptArrStats.arrivalSpawnTimer -= interval
+//                        if (arptArrStats.arrivalSpawnTimer > 0) continue
 
                         val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: continue
                         val arrivalCount = arrivalFamilyEntities.getEntities().filter {
                             it[FlightType.mapper]?.type == FlightType.ARRIVAL && it[ArrivalAirport.mapper]?.arptId == arptId
                         }.size
-                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
-                        arptArrStats.arrivalSpawnTimer = 90f - 10 * (arptArrStats.targetTrafficValue - arrivalCount)
-                        arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
+//                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
+//                        arptArrStats.arrivalSpawnTimer = 90f - 10 * (arptArrStats.targetTrafficValue - arrivalCount)
+//                        arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
                         if (arrivalCount >= arptArrStats.targetTrafficValue) continue
                         createRandomArrivalForAirport(arptEntity, this)
                         FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")
@@ -199,7 +203,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 val depInfo = airport.entity[DepartureInfo.mapper] ?: return@apply
                 val maxAdvDep = airport.entity[MaxAdvancedDepartures.mapper] ?: return@apply
                 val timeSinceLastDep = airport.entity[TimeSinceLastDeparture.mapper] ?: return@apply
-                if (depInfo.closed) {
+                if (depInfo.closed || true) {
                     // Closed for departures - remove any existing next departure from the airport
                     val nextDepCallsign = airport.entity[AirportNextDeparture.mapper]?.aircraft?.get(AircraftInfo.mapper)?.icaoCallsign
                     if (nextDepCallsign != null) {

@@ -119,7 +119,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         }
         val clearanceAct = ClearanceAct(ClearanceState(randomStar?.name ?: "", starRoute, Route(),
                 if (starRoute.size == 0) (spawnPos.third + MAG_HDG_DEV).toInt().toShort() else null, null,
-                clearedAlt, false, ias).ActingClearance())
+                clearedAlt, false, ias, clearedApp = "ILS 02L", clearedTrans = "vectors").ActingClearance())
         entity += clearanceAct
         entity[CommandTarget.mapper]?.apply {
             targetAltFt = cmdTargetAlt

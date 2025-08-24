@@ -348,21 +348,21 @@ data class AircraftSectorUpdateData(private val callsign: String = "", private v
                 // Send contact other sector message only if aircraft is not in player's sector, old UUID is this
                 // player's UUID, and new UUID is not this player's UUID
                 // Will only add contact other message if needed (e.g. not during sector swap)
-                rs.uiPane.commsPane.contactOther(aircraft.entity, newSector)
+//                rs.uiPane.commsPane.contactOther(aircraft.entity, newSector)
             }
             if (newSector == rs.playerSector && controllable.controllerUUID.toString() != newUUID && newUUID == myUuid.toString()) {
                 // Send message only if aircraft is in player's sector, old UUID is not the player's UUID and the new UUID is the player's UUID
                 // Will only perform contact if needed
-                if (needsSendMessage) rs.uiPane.commsPane.also { commsPane ->
-                    if (sayMissedApproach) commsPane.goAround(aircraft.entity)
-                    else commsPane.initialContact(aircraft.entity)
-                }
-                if (needsSendMessage || tagFlashing) {
-                    aircraft.entity += ContactNotification()
-                    aircraft.entity[Datatag.mapper]?.let {
-                        startDatatagNotificationFlash(it, aircraft)
-                    }
-                }
+//                if (needsSendMessage) rs.uiPane.commsPane.also { commsPane ->
+//                    if (sayMissedApproach) commsPane.goAround(aircraft.entity)
+//                    else commsPane.initialContact(aircraft.entity)
+//                }
+//                if (needsSendMessage || tagFlashing) {
+//                    aircraft.entity += ContactNotification()
+//                    aircraft.entity[Datatag.mapper]?.let {
+//                        startDatatagNotificationFlash(it, aircraft)
+//                    }
+//                }
             } else if (newSector != rs.playerSector || newUUID != myUuid.toString()) {
                 aircraft.entity.remove<ContactNotification>()
                 aircraft.entity[AircraftRequestNotification.mapper]?.requestTypes?.clear()

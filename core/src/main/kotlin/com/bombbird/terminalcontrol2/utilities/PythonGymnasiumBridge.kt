@@ -1,15 +1,28 @@
 package com.bombbird.terminalcontrol2.utilities
 
-import com.bombbird.terminalcontrol2.components.RadarData
+import com.badlogic.ashley.core.Entity
+import com.badlogic.gdx.math.Vector2
+import com.bombbird.terminalcontrol2.components.Altitude
+import com.bombbird.terminalcontrol2.components.ApproachChildren
+import com.bombbird.terminalcontrol2.components.Direction
+import com.bombbird.terminalcontrol2.components.GlideSlope
+import com.bombbird.terminalcontrol2.components.GroundTrack
+import com.bombbird.terminalcontrol2.components.Localizer
+import com.bombbird.terminalcontrol2.components.LocalizerCaptured
+import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.entities.Aircraft
+import com.bombbird.terminalcontrol2.global.GAME
+import com.bombbird.terminalcontrol2.navigation.Approach
 import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.Kernel32
 import com.sun.jna.platform.win32.WinNT.HANDLE
 import ktx.ashley.get
+import ktx.ashley.has
 import ktx.collections.GdxArrayMap
+import ktx.math.plusAssign
 
 object PythonGymnasiumBridge {
-    const val FILE_SIZE = 28
+    const val FILE_SIZE = 32
     const val FILE_MAP_WRITE = 0x0002
     const val EVENT_ALL_ACCESS = 0x1F0003
     const val WAIT_TIMEOUT = 0x00000102
@@ -23,6 +36,13 @@ object PythonGymnasiumBridge {
     const val SPD_ACTION_ADDER = 160
 
     var framesToAction = FRAMES_PER_ACTION
+    const val LOOP_EXIT_MS = 15000
+    var loopExited = false
+    var resetNeeded = false
+    var prevLocDistPx = Float.MIN_VALUE
+    var targetApproach = lazy {
+        GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
+    }
 
     private val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
         FILE_MAP_WRITE,
@@ -35,10 +55,11 @@ object PythonGymnasiumBridge {
     val resetSim: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetEvent")
     val actionReady: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionReadyEvent")
     val actionDone: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionDoneEvent")
+    val resetAfterStep: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetAfterEvent")
 
     init {
         if (mmHandle == null) {
-            FileLog.warn("SharedMemory", "Got WinError ${Kernel32.INSTANCE.GetLastError()} when opening shared memory")
+            throw NullPointerException("Got WinError ${Kernel32.INSTANCE.GetLastError()} when opening shared memory")
         }
         buffer = Kernel32.INSTANCE.MapViewOfFile(
             mmHandle,
@@ -48,29 +69,79 @@ object PythonGymnasiumBridge {
     }
 
     fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
+        if (loopExited) return
+
         // Check for reset sim event
         val returnCode = Kernel32.INSTANCE.WaitForSingleObject(resetSim, 0)
         if (returnCode != WAIT_TIMEOUT) {
+//            println("Resetting state")
+            resetNeeded = false
             val newAircraft = resetAircraft()
             writeState(newAircraft)
             Kernel32.INSTANCE.SetEvent(actionReady)
+//            println("${System.currentTimeMillis()} Reset action ready")
+
+            // Wait for action done event before continuing simulation
+            val returnCode = Kernel32.INSTANCE.WaitForSingleObject(actionDone,LOOP_EXIT_MS)
+            if (returnCode == WAIT_TIMEOUT) {
+                // Assume RL program has exited, stop bridge loop
+                FileLog.warn("PythonGymnasiumBridge", "Update loop exited")
+                loopExited = true
+                return
+            }
+//            println("${System.currentTimeMillis()} (Reset) Performing action")
+            performAction(aircraft)
+
             framesToAction = FRAMES_PER_ACTION
             return
         }
 
         framesToAction--
-        if (framesToAction <= 0) {
+        if (framesToAction <= 0 && !resetNeeded) {
             writeState(aircraft)
 
             // Send action ready event after writing state to shared memory
             Kernel32.INSTANCE.SetEvent(actionReady)
+//            println("${System.currentTimeMillis()} Set action ready")
+
+            val resetAfterStepCode = Kernel32.INSTANCE.WaitForSingleObject(resetAfterStep, 0)
+            if (resetAfterStepCode != WAIT_TIMEOUT) {
+                // Reset requested, exit update so won't get blocked
+                resetNeeded = true
+                return
+            }
 
             // Wait for action done event before continuing simulation
-            Kernel32.INSTANCE.WaitForSingleObject(actionDone, Kernel32.INFINITE)
+            val returnCode = Kernel32.INSTANCE.WaitForSingleObject(actionDone,LOOP_EXIT_MS)
+            if (returnCode == WAIT_TIMEOUT) {
+                // Assume RL program has exited, stop bridge loop
+                FileLog.warn("PythonGymnasiumBridge", "Update loop exited")
+                loopExited = true
+                return
+            }
+//            println("${System.currentTimeMillis()} Performing action")
             performAction(aircraft)
 
             framesToAction = FRAMES_PER_ACTION
         }
+    }
+
+    private fun distPxFromLoc(aircraft: Entity, approach: Approach): Float {
+        val acPos = aircraft[Position.mapper]!!
+        val pos = approach.entity[Position.mapper]!!
+        val loc = approach.entity[Localizer.mapper]!!
+        val dir = approach.entity[Direction.mapper]!!.trackUnitVector
+        val gs = approach.entity[GlideSlope.mapper]
+
+        val offsetNm = gs?.offsetNm ?: 0f
+        dir.setLength((nmToPx(1) - nmToPx(offsetNm)))
+        val startPos = Vector2(pos.x, pos.y)
+        startPos.plusAssign(dir)
+        val endPos = Vector2(startPos)
+        dir.setLength(nmToPx(loc.maxDistNm.toInt()))
+        endPos.plusAssign(dir)
+
+        return distPxFromPolygon(floatArrayOf(startPos.x, startPos.y, endPos.x, endPos.y), acPos.x, acPos.y)
     }
 
     private fun writeState(aircraft: GdxArrayMap<String, Aircraft>) {
@@ -83,21 +154,27 @@ object PythonGymnasiumBridge {
         // Proceed flag
         buffer.setByte(0, 1)
 
-        // TODO Reward from previous action
+        // Reward from previous action
         // Constant -1 per time step + decrease in distance towards LOC line segment +
         // lump sum reward on LOC capture depending on intercept angle (lower angle = higher reward)
-        buffer.setByte(4, -1)
+        val newLocDistPx = distPxFromLoc(targetAircraft, targetApproach.value)
+        val distReward = (prevLocDistPx - newLocDistPx) / 4
+        prevLocDistPx = newLocDistPx
+        val isLocCap: Byte = if (targetAircraft.has(LocalizerCaptured.mapper)) 1 else 0
+        buffer.setFloat(4, distReward - 1)
 
-        // TODO Simulation terminated (LOC captured)
-        buffer.setByte(5, 0)
+        // Simulation terminated (LOC captured)
+        buffer.setByte(8, isLocCap)
 
         // Aircraft x, y, alt, gs, track
-        val radarData = targetAircraft[RadarData.mapper]!!
-        buffer.setFloat(8, radarData.position.x)
-        buffer.setFloat(12, radarData.position.y)
-        buffer.setFloat(16, radarData.altitude.altitudeFt)
-        buffer.setFloat(20, radarData.speed.speedKts)
-        buffer.setFloat(24, convertWorldAndRenderDeg(radarData.direction.trackUnitVector.angleDeg()))
+        val pos = targetAircraft[Position.mapper]!!
+        buffer.setFloat(12, pos.x)
+        buffer.setFloat(16, pos.y)
+        val alt = targetAircraft[Altitude.mapper]!!
+        buffer.setFloat(20, alt.altitudeFt)
+        val groundTrack = targetAircraft[GroundTrack.mapper]!!
+        buffer.setFloat(24, groundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
+        buffer.setFloat(28, convertWorldAndRenderDeg(groundTrack.trackVectorPxps.angleDeg()))
     }
 
     private fun performAction(aircraft: GdxArrayMap<String, Aircraft>) {
@@ -107,13 +184,15 @@ object PythonGymnasiumBridge {
 
         val targetAircraft = aircraft.getValueAt(0).entity
 
-        val proceedFlag = buffer.getByte(0)
+        val bytes = buffer.getByteArray(0, 4)
+        val proceedFlag = bytes[0]
         if (proceedFlag.toInt() != 1) throw IllegalStateException("ProceedFlag must be 1")
         buffer.setByte(0, 0) // Reset proceed flag
+//        println("${System.currentTimeMillis()} Proceed unset")
 
-        val clearedHdg = (buffer.getByte(1) * HDG_ACTION_MULTIPLIER).toShort()
-        val clearedAlt = buffer.getByte(2) * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
-        val clearedIas = (buffer.getByte(3) * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
+        val clearedHdg = (bytes[1] * HDG_ACTION_MULTIPLIER).toShort()
+        val clearedAlt = bytes[2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
+        val clearedIas = (bytes[3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
 
         val clearanceState = getLatestClearanceState(targetAircraft)!!
         clearanceState.vectorHdg = clearedHdg

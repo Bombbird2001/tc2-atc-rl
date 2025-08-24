@@ -686,7 +686,7 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
 
             prevMs = currMs
 
-            Thread.sleep(2)
+//            Thread.sleep(1)
 
 //            if (currMs % 100 == 0L) println("FPS: ${frameCount * 1000 / frametimeSum}")
         }
@@ -707,7 +707,15 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
         }
 
         pythonGymBridge.update(aircraft) {
-            // TODO Reset function - despawn current aircraft, create new aircraft
+            // Reset function - despawn current aircraft, create new aircraft
+            for (i in 0 until aircraft.size) {
+                val ac = aircraft.getValueAt(i)
+                despawnAircraft(ac.entity)
+            }
+            aircraft.clear()
+
+            val airport = airports[0].entity
+            createArrival("SHIBA1", "B77W", airport, this)
 
             return@update aircraft
         }

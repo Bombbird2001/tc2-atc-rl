@@ -33,6 +33,9 @@ class PhysicsSystemClient: EntitySystem() {
      * For values that can be updated less frequently and are not dependent on [deltaTime], put in [PhysicsSystemIntervalClient]
      */
     override fun update(deltaTime: Float) {
+        // Disable client-side extrapolation
+        return
+
         // Update position with speed, direction
         val positionUpdates = positionUpdateFamilyEntities.getEntities()
         for (i in 0 until positionUpdates.size()) {

@@ -30,7 +30,7 @@ private val airportMetarMoshiAdapter = Moshi.Builder().build().adapter<Map<Byte,
 fun requestAllMetar() {
     // No need to update for static weather
     val weatherMode = GAME.gameServer?.weatherMode ?: return
-    if (weatherMode == WEATHER_STATIC) {
+    if (weatherMode == WEATHER_STATIC || true) {
         if (GAME.gameServer?.initialisingWeather?.get() == true) initialiseAirportMetarStatic()
         return notifyGameServerWeatherLoaded()
     }
@@ -74,12 +74,13 @@ fun initialiseAirportMetarStatic() {
     val airports = GAME.gameServer?.airports ?: return
     for (i in 0 until airports.size) {
         airports.getValueAt(i)?.entity?.let { arpt ->
-            arpt[MetarInfo.mapper]?.apply {
-                updateWindVector(windVectorPx, windHeadingDeg, windSpeedKt)
-                updateRunwayWindComponents(arpt)
-                calculateRunwayConfigScores(arpt)
-                checkRunwayConfigSelection(arpt)
-            }
+            setAirportStaticWeather(arpt, 0, 0, 10000, null, 29, -9, 1013)
+//            arpt[MetarInfo.mapper]?.apply {
+//                updateWindVector(windVectorPx, windHeadingDeg, windSpeedKt)
+//                updateRunwayWindComponents(arpt)
+//                calculateRunwayConfigScores(arpt)
+//                checkRunwayConfigSelection(arpt)
+//            }
         }
     }
 }

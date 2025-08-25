@@ -263,6 +263,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
         }
 
         // Despawn checker
+        /*
         val checkDespawn = despawnFamilyEntities.getEntities()
         for (i in 0 until checkDespawn.size()) {
             checkDespawn[i]?.apply {
@@ -283,6 +284,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 despawnAircraft(this)
             }
         }
+         */
 
         // Update the levels of each conflict-able entity
         updateConflictLevels()

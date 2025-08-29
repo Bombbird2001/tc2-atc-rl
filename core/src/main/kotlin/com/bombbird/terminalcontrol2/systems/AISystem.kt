@@ -588,6 +588,8 @@ class AISystem: EntitySystem() {
         val locArmed = locArmedFamilyEntities.getEntities()
         for (i in 0 until locArmed.size()) {
             locArmed[i]?.apply {
+                if (!LOC_CAP_CHECK) return@apply
+
                 val pos = get(Position.mapper) ?: return@apply
                 val dir = get(Direction.mapper) ?: return@apply
                 val ias = get(IndicatedAirSpeed.mapper) ?: return@apply
@@ -604,6 +606,31 @@ class AISystem: EntitySystem() {
                 if (!isInsideLocArc(locApp, pos.x, pos.y, LOC_INNER_ARC_ANGLE_DEG, LOC_INNER_ARC_DIST_NM) &&
                     !isInsideLocArc(locApp, pos.x, pos.y, LOC_OUTER_ARC_ANGLE_DEG, locApp[Localizer.mapper]?.maxDistNm?.toFloat() ?: return@apply)) return@apply
 
+                // Additional glideslope altitude check
+                val alt = get(Altitude.mapper) ?: return@apply
+                val gsApp = get(GlideSlopeArmed.mapper)?.gsApp
+                if (gsApp != null) {
+                    val gsAltAtPos = getAppAltAtPos(gsApp, pos.x, pos.y, 0f)
+                    // Enforce LOC capture at or below glideslope altitude
+                    if (gsAltAtPos == null || alt.altitudeFt >= gsAltAtPos + 10) {
+                        return@apply
+                    }
+                }
+
+                // Additional intercept angle check - max 60 degrees offset
+                val angleDiff = findDeltaHeading(convertWorldAndRenderDeg(dir.trackUnitVector.angleDeg()),locCourseHdg, CommandTarget.TURN_DEFAULT)
+                if (abs(angleDiff) > 60) {
+                    return@apply
+                }
+
+                if (LOC_CAP_IAS_CHECK) {
+                    // Additional IAS check - max 220 IAS
+                    val spd = get(Speed.mapper)!!
+                    if (spd.speedKts >= 221) {
+                        return@apply
+                    }
+                }
+
                 // Find point of intersection between aircraft ground track and localizer course
                 val intersectionPoint = Vector2(locPos.x, locPos.y)
                 val distFromAppOrigin = Intersector.intersectRayRay(intersectionPoint, locTrack, Vector2(pos.x, pos.y), groundTrack.trackVectorPxps)
@@ -611,8 +638,7 @@ class AISystem: EntitySystem() {
                 // Calculate distance between aircraft and waypoint and check if aircraft should move to next leg
                 val deltaX = intersectionPoint.x - pos.x
                 val deltaY = intersectionPoint.y - pos.y
-                val requiredDist = max(5f, findTurnDistance(findDeltaHeading(convertWorldAndRenderDeg(dir.trackUnitVector.angleDeg()),
-                    locCourseHdg, CommandTarget.TURN_DEFAULT),
+                val requiredDist = max(5f, findTurnDistance(angleDiff,
                     if (ias.iasKt > HALF_TURN_RATE_THRESHOLD_IAS) MAX_HIGH_SPD_ANGULAR_SPD else MAX_LOW_SPD_ANGULAR_SPD, groundTrack.trackVectorPxps.len()))
                 if (requiredDist * requiredDist > deltaX * deltaX + deltaY * deltaY) {
                     remove<LocalizerArmed>()

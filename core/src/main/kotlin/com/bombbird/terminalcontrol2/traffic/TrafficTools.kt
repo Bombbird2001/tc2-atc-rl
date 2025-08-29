@@ -121,6 +121,9 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
                 if (starRoute.size == 0) (spawnPos.third + MAG_HDG_DEV).toInt().toShort() else null, null,
                 clearedAlt, false, ias, clearedApp = "ILS 02L", clearedTrans = "vectors").ActingClearance())
         entity += clearanceAct
+        val app = airport[ApproachChildren.mapper]?.approachMap?.get("ILS 02L")?.entity!!
+        entity += LocalizerArmed(app)
+        entity += GlideSlopeArmed(app)
         entity[CommandTarget.mapper]?.apply {
             targetAltFt = cmdTargetAlt
             targetIasKt = ias

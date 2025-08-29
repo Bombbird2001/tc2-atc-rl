@@ -47,7 +47,7 @@ object PythonGymnasiumBridge {
     var targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
     }
-    var clearanceChanged = false
+    var clearancesChanged = 0
 
     private val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
         FILE_MAP_WRITE,
@@ -162,15 +162,17 @@ object PythonGymnasiumBridge {
         buffer.setByte(0, 1)
 
         // Reward from previous action
-        // Constant -1 per time step + decrease in distance towards LOC line segment +
+        // Constant -0.5 per time step + decrease in distance towards LOC line segment +
         // lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
         val newLocDistPx = distPxFromLoc(targetAircraft, targetApproach.value)
         val pos = targetAircraft[Position.mapper]!!
         val alt = targetAircraft[Altitude.mapper]!!
         val spd = targetAircraft[Speed.mapper]!!
         val prevClearance = getLatestClearanceState(targetAircraft)!!
-        var reward = (prevLocDistPx - newLocDistPx) / 400 + (prevAltFt - alt.altitudeFt) / 12000 - 0.01f + (if (clearanceChanged) -0.2f else 0f)
-        clearanceChanged = false
+        var reward = (prevLocDistPx - newLocDistPx) / 400 + (prevAltFt - alt.altitudeFt) / 12000 - 0.01f + (clearancesChanged * -0.3f)
+        // Discourage aircraft from loitering too long close to LOC
+        if (newLocDistPx < nmToPx(4) && alt.altitudeFt <= 6010) reward -= 0.02f
+        clearancesChanged = 0
         prevLocDistPx = newLocDistPx
         prevAltFt = alt.altitudeFt
         val isLocCap: Byte = when {
@@ -219,8 +221,10 @@ object PythonGymnasiumBridge {
         val clearedIas = (bytes[3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
 
         val prevClearance = getLatestClearanceState(targetAircraft)!!
-        clearanceChanged = clearedHdg != prevClearance.vectorHdg || clearedAlt != prevClearance.clearedAlt || clearedIas != prevClearance.clearedIas
+        clearancesChanged = (clearedHdg != prevClearance.vectorHdg).toInt() + (clearedAlt != prevClearance.clearedAlt).toInt() + (clearedIas != prevClearance.clearedIas).toInt()
         val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
         addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
     }
 }
+
+fun Boolean.toInt() = if (this) 1 else 0

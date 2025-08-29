@@ -42,7 +42,7 @@ object PythonGymnasiumBridge {
     var targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
     }
-    var clearanceChangedReward = 0
+    var clearanceChangedReward = 0f
 
     private val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
         FILE_MAP_WRITE,
@@ -162,16 +162,16 @@ object PythonGymnasiumBridge {
         val newLocDistPx = distPxFromLoc(targetAircraft, targetApproach.value)
         val pos = targetAircraft[Position.mapper]!!
 //        val newLocDistPx = calculateDistanceBetweenPoints(pos.x, pos.y, 0f, 0f)
-        var reward = (prevLocDistPx - newLocDistPx) / 4 - 1 + clearanceChangedReward
-        clearanceChangedReward = 0
+        var reward = (prevLocDistPx - newLocDistPx) / 400 - 0.01f + clearanceChangedReward
+        clearanceChangedReward = 0f
         prevLocDistPx = newLocDistPx
 //        val isLocCap: Byte = if (targetAircraft.has(LocalizerCaptured.mapper)) 1 else 0
         val isLocCap: Byte = if (newLocDistPx < 15) 1 else 0
         if (isLocCap == 1.byte) {
-            reward += 500
+            reward += 4
             terminating = true
         }
-        buffer.setFloat(4, reward - 1)
+        buffer.setFloat(4, reward)
 
         // Simulation terminated (LOC captured)
         buffer.setByte(8, isLocCap)
@@ -204,7 +204,7 @@ object PythonGymnasiumBridge {
         val clearedIas = (bytes[3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
 
         val prevClearance = getLatestClearanceState(targetAircraft)!!
-        clearanceChangedReward = if (clearedHdg != prevClearance.vectorHdg) -3 else 0
+        clearanceChangedReward = if (clearedHdg != prevClearance.vectorHdg) -0.1f else 0f
         val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
         addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
     }

@@ -44,7 +44,10 @@ import kotlin.math.min
  * @param maxPlayersSet the maximum numbers of player the host as selected
  * @param testMode whether to start this game server in test mode (i.e. will not initiate any network servers)
  */
-class GameServer private constructor(airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte, testMode: Boolean = false) {
+class GameServer private constructor(
+    airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
+    testMode: Boolean = false, envId: Int = 0, private val isHeadlessTraining: Boolean = false
+) {
     companion object {
         const val UPDATE_INTERVAL = 1000.0 / SERVER_UPDATE_RATE
         const val SERVER_TO_CLIENT_UPDATE_INTERVAL_FAST = 1000.0 / SERVER_TO_CLIENT_UPDATE_RATE_FAST
@@ -63,6 +66,11 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
         const val STORMS_MEDIUM: Byte = 9
         const val STORMS_HIGH: Byte = 10
         const val STORMS_NIGHTMARE: Byte = 11
+
+        /** Creates a new single-player mode game server object for ATC-RL headless training */
+        fun newRLGameServer(airportToHost: String, envId: Int): GameServer {
+            return GameServer(airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true)
+        }
 
         /**
          * Creates a new single-player mode game server object
@@ -242,7 +250,7 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
     // var timeCounter = 0f
     // var frames = 0
     private var startTime = -1L
-    private val pythonGymBridge = PythonGymnasiumBridge
+    private val pythonGymBridge = PythonGymnasiumBridge(envId)
 
     // Loading screen callbacks
     var serverStartedCallback: (() -> Unit)? = null
@@ -338,7 +346,7 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
                 loopRunning.set(true)
                 gameLoop()
                 cleanUp()
-                saveGame(this)
+                if (!isHeadlessTraining) saveGame(this)
             } catch (e: Exception) {
                 e.printStackTrace()
                 HttpRequest.sendCrashReport(e, "GameServer", getMultiplayerType())
@@ -667,7 +675,7 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
                 // Check if autosave time is up
                 autosaveTime += (currMs - prevMs).toInt()
                 if (autosaveTime > AUTOSAVE_INTERVAL_MIN * 60 * 1000) {
-                    saveGame(this)
+                    if (!isHeadlessTraining) saveGame(this)
                     autosaveTime -= AUTOSAVE_INTERVAL_MIN * 60 * 1000
                 }
 
@@ -736,7 +744,7 @@ class GameServer private constructor(airportToHost: String, saveId: Int?, val pu
                 pauseCondition.signal()
             }
             gamePaused.set(false)
-        } else if (playerNo.get() <= 1) {
+        } else if (playerNo.get() <= 1 && !isHeadlessTraining) {
             FileLog.info("GameServer", "Pausing game loop")
             gamePaused.set(true)
         }

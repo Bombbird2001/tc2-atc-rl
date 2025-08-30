@@ -23,22 +23,25 @@ import ktx.ashley.has
 import ktx.collections.GdxArrayMap
 import ktx.math.plusAssign
 
-object PythonGymnasiumBridge {
-    const val FILE_SIZE = 52
-    const val FILE_MAP_WRITE = 0x0002
-    const val EVENT_ALL_ACCESS = 0x1F0003
-    const val WAIT_TIMEOUT = 0x00000102
+class PythonGymnasiumBridge(envId: Int) {
+    companion object {
+        const val FILE_SIZE = 52
+        const val FILE_MAP_WRITE = 0x0002
+        const val EVENT_ALL_ACCESS = 0x1F0003
+        const val WAIT_TIMEOUT = 0x00000102
 
-    const val FRAMES_PER_ACTION = 10 * 30
+        const val FRAMES_PER_ACTION = 10 * 30
 
-    const val HDG_ACTION_MULTIPLIER = 5
-    const val ALT_ACTION_MULTIPLIER = 1000
-    const val ALT_ACTION_ADDER = 2000
-    const val SPD_ACTION_MULTIPLIER = 10
-    const val SPD_ACTION_ADDER = 160
+        const val HDG_ACTION_MULTIPLIER = 5
+        const val ALT_ACTION_MULTIPLIER = 1000
+        const val ALT_ACTION_ADDER = 2000
+        const val SPD_ACTION_MULTIPLIER = 10
+        const val SPD_ACTION_ADDER = 160
+
+        const val LOOP_EXIT_MS = 15000
+    }
 
     var framesToAction = FRAMES_PER_ACTION
-    const val LOOP_EXIT_MS = 15000
     var loopExited = false
     var resetNeeded = false
     var terminating = false
@@ -52,15 +55,15 @@ object PythonGymnasiumBridge {
     private val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
         FILE_MAP_WRITE,
         false,
-        "Local\\ATCRLSharedMem"
+        "Local\\ATCRLSharedMem$envId"
     )
     private val buffer: Pointer
 
     // Open named events
-    val resetSim: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetEvent")
-    val actionReady: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionReadyEvent")
-    val actionDone: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionDoneEvent")
-    val resetAfterStep: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetAfterEvent")
+    val resetSim: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetEvent$envId")
+    val actionReady: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionReadyEvent$envId")
+    val actionDone: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionDoneEvent$envId")
+    val resetAfterStep: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetAfterEvent$envId")
 
     init {
         if (mmHandle == null) {

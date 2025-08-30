@@ -1,0 +1,116 @@
+import groovy.json.JsonOutput
+
+apply plugin: 'application'
+targetCompatibility = JavaVersion.VERSION_1_8
+sourceCompatibility = JavaVersion.VERSION_1_8
+
+sourceSets {
+	main {
+		resources {
+			srcDirs = ["../assetsDesktop" ]
+			exclude "Libs"
+		}
+	}
+}
+
+mainClassName = 'com.bombbird.terminalcontrol2.atcrl.RLLauncher'
+eclipse.project.name = appName + '-lwjgl3'
+
+dependencies {
+	implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+	implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
+	implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+	implementation "org.lwjgl:lwjgl-nfd:$lwjgl3Version"
+	implementation "org.lwjgl:lwjgl-nfd:$lwjgl3Version:natives-windows"
+	implementation "org.lwjgl:lwjgl-nfd:$lwjgl3Version:natives-linux"
+	implementation "org.lwjgl:lwjgl-nfd:$lwjgl3Version:natives-macos"
+	implementation "org.lwjgl:lwjgl-nfd:$lwjgl3Version:natives-macos-arm64"
+	implementation project(':core')
+
+	testImplementation(testFixtures(project(':core')))
+
+	api files("../core/build/classes/kotlin/main")
+	api files("build/classes/kotlin/main")
+}
+
+kotlin {
+	jvmToolchain(8)
+}
+
+def os = System.properties['os.name'].toLowerCase()
+
+run {
+	workingDir = rootProject.file('assetsDesktop').path
+	setIgnoreExitValue(true)
+
+	if (os.contains('mac')) {
+		// Required to run LWJGL3 Java apps on MacOS
+		jvmArgs += "-XstartOnFirstThread"
+	}
+}
+
+jar {
+// sets the name of the .jar file this produces to the name of the game or app.
+	archiveBaseName.set(appName)
+// the duplicatesStrategy matters starting in Gradle 7.0; this setting works.
+	duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+	dependsOn(configurations.runtimeClasspath, 'checkVersion')
+	from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+// these "exclude" lines remove some unnecessary duplicate files in the output JAR.
+	exclude('META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA')
+	dependencies {
+		exclude('META-INF/INDEX.LIST', 'META-INF/maven/**')
+	}
+// setting the manifest makes the JAR runnable.
+	manifest {
+		attributes 'Main-Class': project.mainClassName
+	}
+// this last step may help on some OSes that need extra instruction to make runnable JARs.
+	doLast {
+		file(archiveFile).setExecutable(true, false)
+	}
+}
+
+// Equivalent to the jar task; here for compatibility with gdx-setup.
+tasks.register('dist') {
+	dependsOn['jar']
+}
+
+tasks.register('testDataFile', Test) {
+	// Enable JUnit 5 (Gradle 4.6+).
+	useJUnitPlatform()
+
+	// Always run tests, even when nothing changed.
+	dependsOn 'cleanTestDataFile'
+
+	// Show test results.
+	testLogging {
+		events "passed", "skipped", "failed"
+	}
+
+	ignoreFailures = true
+
+	workingDir "../assetsDesktop"
+}
+
+test {
+	dependsOn(project(':core').getTasksByName('test', false).toArray()[0], 'testDataFile')
+}
+
+// Called before build to check that version information in internal game files are correct
+tasks.register('checkVersion') {
+	doLast {
+		String gradleVersion = project.version
+		String gradleVersionCode = project.buildVersion
+
+		def text2 = project.file("../assetsDesktop/BUILD.build").text
+		def values2 = text2.split(' ')
+		if (values2.size() < 2) {
+			throw new GradleException("Version: Type string length is " + values2.size() + ", needs 2")
+		}
+		if ((values2[0] != gradleVersion) || (values2[1] != gradleVersionCode)) {
+			throw new GradleException("Version: " + values2[0] + " code " + values2[1] + " not equal to Gradle's " + gradleVersion + " code " + gradleVersionCode)
+		}
+		println "Version check successful"
+	}
+}

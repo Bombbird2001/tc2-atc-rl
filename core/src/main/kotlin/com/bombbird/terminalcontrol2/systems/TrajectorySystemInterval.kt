@@ -76,7 +76,7 @@ class TrajectorySystemInterval: IntervalSystem(TRAJECTORY_UPDATE_INTERVAL_S) {
         }
 
         // Check for conflicts among predicted points
-        trajectoryManager.checkTrajectoryConflicts(trajectoryTimeStates)
+//        trajectoryManager.checkTrajectoryConflicts(trajectoryTimeStates)
 
         // Check for aircraft that can be cleared towards their original target altitude after clear of traffic
         trajectoryManager.resolveTempAltitudes(temporaryAltitudeEntities.getEntities(), trajectoryTimeStates)

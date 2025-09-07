@@ -211,5 +211,5 @@ const val MULTIPLAYER_PUBLIC_CLIENT = "Public multiplayer (client)"
 const val DISCORD_UPDATE_INTERVAL_S = 10f
 
 /** Training options */
-const val LOC_CAP_CHECK = true
-const val LOC_CAP_IAS_CHECK = true
+const val LOC_CAP_CHECK = false
+const val LOC_CAP_IAS_CHECK = false

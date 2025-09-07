@@ -18,5 +18,5 @@ fun main(args: Array<String>) {
     }
     TerminalControl2(StubExternalFileHandler, StubTextToSpeech, StubDiscordHandler, StubAchievementHandler)
     Gdx.files = Lwjgl3Files()
-    GameServer.newRLGameServer("TCWS", args[0].toInt())
+    GameServer.newRLGameServer("TCWS", args[0].toInt(), false)
 }

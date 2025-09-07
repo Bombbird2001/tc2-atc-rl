@@ -88,7 +88,11 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val randomStar = randomStar(airport)
     val starRoute = randomStar?.getRandomSTARRouteForRunway() ?: Route()
     val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
-    val spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
+    val spawnPosOrig = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
+    val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
+    val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
+    val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
+    val spawnPos = Triple(spawnPosOrig.first + randomJitterX,spawnPosOrig.second + randomJitterY, spawnPosOrig.third + randomTrackJitter)
 
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
         entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)

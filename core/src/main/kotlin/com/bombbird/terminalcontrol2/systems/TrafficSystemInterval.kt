@@ -290,8 +290,8 @@ class TrafficSystemInterval: IntervalSystem(1f) {
         updateConflictLevels()
 
         // Traffic separation checking
-        val conflictAble = conflictAbleFamilyEntities.getEntities()
-        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
+//        val conflictAble = conflictAbleFamilyEntities.getEntities()
+//        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
     }
 
     /** Creates the conflict level array upon loading world data (MAX_ALT required) */

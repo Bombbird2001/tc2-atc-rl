@@ -46,7 +46,8 @@ import kotlin.math.min
  */
 class GameServer private constructor(
     airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
-    testMode: Boolean = false, envId: Int = 0, private val isHeadlessTraining: Boolean = false
+    testMode: Boolean = false, envId: Int = 0, private val isHeadlessTraining: Boolean = false,
+    private val slowMode: Boolean = false
 ) {
     companion object {
         const val UPDATE_INTERVAL = 1000.0 / SERVER_UPDATE_RATE
@@ -68,8 +69,8 @@ class GameServer private constructor(
         const val STORMS_NIGHTMARE: Byte = 11
 
         /** Creates a new single-player mode game server object for ATC-RL headless training */
-        fun newRLGameServer(airportToHost: String, envId: Int): GameServer {
-            return GameServer(airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true)
+        fun newRLGameServer(airportToHost: String, envId: Int, slowMode: Boolean): GameServer {
+            return GameServer(airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true, slowMode = slowMode)
         }
 
         /**
@@ -77,7 +78,7 @@ class GameServer private constructor(
          * @return GameServer in single-player mode
          */
         fun newSinglePlayerGameServer(airportToHost: String): GameServer {
-            return GameServer(airportToHost, null, false, 1)
+            return GameServer(airportToHost, null, false, 1, envId = 0, slowMode = true)
         }
 
         /**
@@ -694,7 +695,7 @@ class GameServer private constructor(
 
             prevMs = currMs
 
-//            Thread.sleep(1)
+            if (slowMode) Thread.sleep(1)
 
 //            if (currMs % 100 == 0L) println("FPS: ${frameCount * 1000 / frametimeSum}")
         }
@@ -758,6 +759,7 @@ class GameServer private constructor(
      * (List not exhaustive)
      */
     private fun sendFastUDPToAll() {
+        if (!slowMode) return
         // println("Fast UDP sent, time passed since program start: ${(System.currentTimeMillis() - startTime) / 1000f}s")
         // Split aircraft values into blocks of 25 aircraft max, and send a UDP packet for each, to prevent buffer size
         // limitations at high aircraft counts
@@ -971,6 +973,7 @@ class GameServer private constructor(
      * @param trails the array containing trail position data for each aircraft
      */
     fun sendAircraftTrailDotUpdate(trails: GdxArray<Pair<String, Position>>) {
+        if (!slowMode) return
         val trailArray = trails.toArray().map { TrailDotData(it.first, it.second.x, it.second.y) }.toTypedArray()
         networkServer.sendToAllTCP(AllTrailDotData(trailArray))
     }

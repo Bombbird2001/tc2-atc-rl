@@ -1,6 +1,7 @@
 package com.bombbird.terminalcontrol2.utilities
 
 import com.badlogic.ashley.core.Entity
+import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.Vector2
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
@@ -15,11 +16,13 @@ import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_CHECK
 import com.bombbird.terminalcontrol2.navigation.Approach
+import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.Kernel32
 import com.sun.jna.platform.win32.WinNT.HANDLE
 import ktx.ashley.get
 import ktx.ashley.has
+import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.math.plusAssign
 
@@ -51,6 +54,8 @@ class PythonGymnasiumBridge(envId: Int) {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
     }
     var clearancesChanged = 0
+
+    val conflictManager = ConflictManager()
 
     private val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
         FILE_MAP_WRITE,
@@ -182,14 +187,22 @@ class PythonGymnasiumBridge(envId: Int) {
             LOC_CAP_CHECK -> if (targetAircraft.has(LocalizerCaptured.mapper)) 1 else 0
             else -> if (newLocDistPx < 15) 1 else 0
         }
+        var shouldTerminate: Byte = 0
         if (isLocCap == 1.byte) {
             reward += 4
             terminating = true
+            shouldTerminate = 1
+        }
+        val conflicts = conflictManager.getConflictCountRL(ImmutableArray(GdxArray(arrayOf(targetAircraft))))
+        if (conflicts > 0) {
+            reward -= 5
+            terminating = true
+            shouldTerminate = 1
         }
         buffer.setFloat(4, reward)
 
-        // Simulation terminated (LOC captured)
-        buffer.setByte(8, isLocCap)
+        // Simulation terminated (LOC captured / conflict encountered)
+        buffer.setByte(8, shouldTerminate)
 
         // Aircraft x, y, alt, gs, track
         val groundTrack = targetAircraft[GroundTrack.mapper]!!

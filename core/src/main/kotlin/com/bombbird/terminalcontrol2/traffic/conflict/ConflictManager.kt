@@ -7,10 +7,13 @@ import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.ThunderStorm
 import com.bombbird.terminalcontrol2.global.*
 import com.bombbird.terminalcontrol2.traffic.WakeManager
+import com.bombbird.terminalcontrol2.traffic.getConflictStartAltitude
+import com.bombbird.terminalcontrol2.traffic.getSectorIndexForAlt
 import com.bombbird.terminalcontrol2.utilities.*
 import ktx.ashley.get
 import ktx.collections.GdxArray
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -27,6 +30,29 @@ class ConflictManager {
     private val potentialConflicts = GdxArray<PotentialConflict>(CONFLICT_SIZE)
 
     val wakeManager = WakeManager()
+
+    fun getConflictCountRL(aircraftArray: ImmutableArray<Entity>): Int {
+        conflicts.clear()
+
+        val startingAlt = getConflictStartAltitude()
+        val conflictLevels: Array<GdxArray<Entity>> = Array(ceil((MAX_ALT + 1500f) / VERT_SEP).roundToInt() - startingAlt / VERT_SEP) {
+            GdxArray()
+        }
+
+        for (aircraft in aircraftArray) {
+            val alt = aircraft[Altitude.mapper]!!
+            val sector = getSectorIndexForAlt(alt.altitudeFt, startingAlt)
+            if (sector < conflictLevels.size) conflictLevels[sector].add(aircraft)
+        }
+
+        // Check aircraft separation with one another
+        checkAircraftSeparationMinimaConflict(conflictLevels)
+
+        // Check MVA, restricted areas
+        checkMVARestrictedConflict(aircraftArray)
+
+        return conflicts.size
+    }
 
     /**
      * Main function to check for all types of conflicts, given the conflict sector distribution for each entity, as well

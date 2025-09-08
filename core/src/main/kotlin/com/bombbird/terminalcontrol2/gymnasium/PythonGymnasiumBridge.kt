@@ -1,4 +1,4 @@
-package com.bombbird.terminalcontrol2.utilities
+package com.bombbird.terminalcontrol2.gymnasium
 
 import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
@@ -17,6 +17,15 @@ import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_CHECK
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
+import com.bombbird.terminalcontrol2.utilities.FileLog
+import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
+import com.bombbird.terminalcontrol2.utilities.byte
+import com.bombbird.terminalcontrol2.utilities.convertWorldAndRenderDeg
+import com.bombbird.terminalcontrol2.utilities.distPxFromPolygon
+import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
+import com.bombbird.terminalcontrol2.utilities.modulateHeading
+import com.bombbird.terminalcontrol2.utilities.nmToPx
+import com.bombbird.terminalcontrol2.utilities.pxpsToKt
 import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.Kernel32
 import com.sun.jna.platform.win32.WinNT.HANDLE
@@ -26,7 +35,7 @@ import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.math.plusAssign
 
-class PythonGymnasiumBridge(envId: Int) {
+class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
     companion object {
         const val FILE_SIZE = 52
         const val FILE_MAP_WRITE = 0x0002
@@ -70,9 +79,11 @@ class PythonGymnasiumBridge(envId: Int) {
     val actionDone: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionDoneEvent$envId")
     val resetAfterStep: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetAfterEvent$envId")
 
+    private val envName = "[env$envId]"
+
     init {
         if (mmHandle == null) {
-            throw NullPointerException("Got WinError ${Kernel32.INSTANCE.GetLastError()} when opening shared memory")
+            throw NullPointerException("$envName Got WinError ${Kernel32.INSTANCE.GetLastError()} when opening shared memory")
         }
         buffer = Kernel32.INSTANCE.MapViewOfFile(
             mmHandle,
@@ -81,13 +92,13 @@ class PythonGymnasiumBridge(envId: Int) {
         )
     }
 
-    fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
         if (loopExited) return
 
         // Check for reset sim event
         val returnCode = Kernel32.INSTANCE.WaitForSingleObject(resetSim, 0)
         if (returnCode != WAIT_TIMEOUT) {
-//            println("Resetting state")
+//            FileLog.info("$envName PythonGymnasiumBridge", "Resetting state")
             resetNeeded = false
             terminating = false
             val newAircraft = resetAircraft()
@@ -99,7 +110,7 @@ class PythonGymnasiumBridge(envId: Int) {
             val returnCode = Kernel32.INSTANCE.WaitForSingleObject(actionDone,LOOP_EXIT_MS)
             if (returnCode == WAIT_TIMEOUT) {
                 // Assume RL program has exited, stop bridge loop
-                FileLog.warn("PythonGymnasiumBridge", "Update loop exited")
+                FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
                 loopExited = true
                 return
             }
@@ -130,7 +141,7 @@ class PythonGymnasiumBridge(envId: Int) {
             val returnCode = Kernel32.INSTANCE.WaitForSingleObject(actionDone,LOOP_EXIT_MS)
             if (returnCode == WAIT_TIMEOUT) {
                 // Assume RL program has exited, stop bridge loop
-                FileLog.warn("PythonGymnasiumBridge", "Update loop exited")
+                FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
                 loopExited = true
                 return
             }
@@ -161,7 +172,7 @@ class PythonGymnasiumBridge(envId: Int) {
 
     private fun writeState(aircraft: GdxArrayMap<String, Aircraft>) {
         if (aircraft.size != 1) {
-            throw IllegalArgumentException("Aircraft must have exactly 1 item, got ${aircraft.size} instead")
+            throw IllegalArgumentException("$envName Aircraft must have exactly 1 item, got ${aircraft.size} instead")
         }
 
         val targetAircraft = aircraft.getValueAt(0).entity
@@ -221,14 +232,14 @@ class PythonGymnasiumBridge(envId: Int) {
 
     private fun performAction(aircraft: GdxArrayMap<String, Aircraft>) {
         if (aircraft.size != 1) {
-            throw IllegalArgumentException("Aircraft must have exactly 1 item, got ${aircraft.size} instead")
+            throw IllegalArgumentException("$envName Aircraft must have exactly 1 item, got ${aircraft.size} instead")
         }
 
         val targetAircraft = aircraft.getValueAt(0).entity
 
         val bytes = buffer.getByteArray(0, 4)
         val proceedFlag = bytes[0]
-        if (proceedFlag.toInt() != 1) throw IllegalStateException("ProceedFlag must be 1")
+        if (proceedFlag.toInt() != 1) throw IllegalStateException("$envName ProceedFlag must be 1")
         buffer.setByte(0, 0) // Reset proceed flag
 //        println("${System.currentTimeMillis()} Proceed unset")
 

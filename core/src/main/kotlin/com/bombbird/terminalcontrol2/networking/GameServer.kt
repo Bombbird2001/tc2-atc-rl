@@ -8,6 +8,9 @@ import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.*
 import com.bombbird.terminalcontrol2.files.*
 import com.bombbird.terminalcontrol2.global.*
+import com.bombbird.terminalcontrol2.gymnasium.GymnasiumBridge
+import com.bombbird.terminalcontrol2.gymnasium.PythonGymnasiumBridge
+import com.bombbird.terminalcontrol2.gymnasium.StubGymnasiumBridge
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.networking.dataclasses.*
@@ -251,14 +254,20 @@ class GameServer private constructor(
     // var timeCounter = 0f
     // var frames = 0
     private var startTime = -1L
-    private val pythonGymBridge = PythonGymnasiumBridge(envId)
+    private val pythonGymBridge: GymnasiumBridge
+    private val envName = "env[$envId]"
 
     // Loading screen callbacks
     var serverStartedCallback: (() -> Unit)? = null
 
     init {
-        if (!testMode) initiateServer(airportToHost, saveId)
-        else loadGameTest()
+        if (!testMode) {
+            initiateServer(airportToHost, saveId)
+            pythonGymBridge = PythonGymnasiumBridge(envId)
+        } else {
+            loadGameTest()
+            pythonGymBridge = StubGymnasiumBridge
+        }
     }
 
     /** Initialises game world for testing purposes */
@@ -725,6 +734,7 @@ class GameServer private constructor(
 
             val airport = airports[0].entity
             createArrival("SHIBA1", "B77W", airport, this)
+//            FileLog.info("$envName GameServer", "${aircraft.size} aircraft")
 
             return@update aircraft
         }

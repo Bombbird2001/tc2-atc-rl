@@ -15,6 +15,8 @@ import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_CHECK
+import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
+import com.bombbird.terminalcontrol2.gymnasium.ipc.WindowsSharedMemory
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.utilities.FileLog
@@ -26,9 +28,6 @@ import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.modulateHeading
 import com.bombbird.terminalcontrol2.utilities.nmToPx
 import com.bombbird.terminalcontrol2.utilities.pxpsToKt
-import com.sun.jna.Pointer
-import com.sun.jna.platform.win32.Kernel32
-import com.sun.jna.platform.win32.WinNT.HANDLE
 import ktx.ashley.get
 import ktx.ashley.has
 import ktx.collections.GdxArray
@@ -37,10 +36,7 @@ import ktx.math.plusAssign
 
 class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
     companion object {
-        const val FILE_SIZE = 52
-        const val FILE_MAP_WRITE = 0x0002
-        const val EVENT_ALL_ACCESS = 0x1F0003
-        const val WAIT_TIMEOUT = 0x00000102
+        const val SHM_FILE_SIZE = 52
 
         const val FRAMES_PER_ACTION = 10 * 30
 
@@ -66,49 +62,28 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
 
     val conflictManager = ConflictManager()
 
-    private val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
-        FILE_MAP_WRITE,
-        false,
-        "Local\\ATCRLSharedMem$envId"
-    )
-    private val buffer: Pointer
-
-    // Open named events
-    val resetSim: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetEvent$envId")
-    val actionReady: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionReadyEvent$envId")
-    val actionDone: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLActionDoneEvent$envId")
-    val resetAfterStep: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\ATCRLResetAfterEvent$envId")
-
+    private val sharedMemoryIPC: SharedMemoryIPC
     private val envName = "[env$envId]"
 
     init {
-        if (mmHandle == null) {
-            throw NullPointerException("$envName Got WinError ${Kernel32.INSTANCE.GetLastError()} when opening shared memory")
-        }
-        buffer = Kernel32.INSTANCE.MapViewOfFile(
-            mmHandle,
-            FILE_MAP_WRITE,
-            0, 0, FILE_SIZE
-        )
+        sharedMemoryIPC = WindowsSharedMemory(envId, SHM_FILE_SIZE)
     }
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
         if (loopExited) return
 
         // Check for reset sim event
-        val returnCode = Kernel32.INSTANCE.WaitForSingleObject(resetSim, 0)
-        if (returnCode != WAIT_TIMEOUT) {
+        if (sharedMemoryIPC.needsResetSim()) {
 //            FileLog.info("$envName PythonGymnasiumBridge", "Resetting state")
             resetNeeded = false
             terminating = false
             val newAircraft = resetAircraft()
             writeState(newAircraft)
-            Kernel32.INSTANCE.SetEvent(actionReady)
+            sharedMemoryIPC.signalActionReady()
 //            println("${System.currentTimeMillis()} Reset action ready")
 
             // Wait for action done event before continuing simulation
-            val returnCode = Kernel32.INSTANCE.WaitForSingleObject(actionDone,LOOP_EXIT_MS)
-            if (returnCode == WAIT_TIMEOUT) {
+            if (sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
                 // Assume RL program has exited, stop bridge loop
                 FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
                 loopExited = true
@@ -126,11 +101,10 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
             writeState(aircraft)
 
             // Send action ready event after writing state to shared memory
-            Kernel32.INSTANCE.SetEvent(actionReady)
+            sharedMemoryIPC.signalActionReady()
 //            println("${System.currentTimeMillis()} Set action ready")
 
-            val resetAfterStepCode = Kernel32.INSTANCE.WaitForSingleObject(resetAfterStep, 0)
-            if (resetAfterStepCode != WAIT_TIMEOUT || terminating) {
+            if (sharedMemoryIPC.needsResetAfterStep() || terminating) {
                 // Reset requested, exit update so won't get blocked
                 resetNeeded = true
                 terminating = false
@@ -138,8 +112,7 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
             }
 
             // Wait for action done event before continuing simulation
-            val returnCode = Kernel32.INSTANCE.WaitForSingleObject(actionDone,LOOP_EXIT_MS)
-            if (returnCode == WAIT_TIMEOUT) {
+            if (sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
                 // Assume RL program has exited, stop bridge loop
                 FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
                 loopExited = true
@@ -178,7 +151,7 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
         val targetAircraft = aircraft.getValueAt(0).entity
 
         // Proceed flag
-        buffer.setByte(0, 1)
+        sharedMemoryIPC.setByte(0, 1)
 
         // Reward from previous action
         // Constant -0.5 per time step + decrease in distance towards LOC line segment +
@@ -210,24 +183,24 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
             terminating = true
             shouldTerminate = 1
         }
-        buffer.setFloat(4, reward)
+        sharedMemoryIPC.setFloat(4, reward)
 
         // Simulation terminated (LOC captured / conflict encountered)
-        buffer.setByte(8, shouldTerminate)
+        sharedMemoryIPC.setByte(8, shouldTerminate)
 
         // Aircraft x, y, alt, gs, track
         val groundTrack = targetAircraft[GroundTrack.mapper]!!
         val currHdg = modulateHeading(convertWorldAndRenderDeg(groundTrack.trackVectorPxps.angleDeg()))
-        buffer.setFloat(12, pos.x)
-        buffer.setFloat(16, pos.y)
-        buffer.setFloat(20, alt.altitudeFt)
-        buffer.setFloat(24, groundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
-        buffer.setFloat(28, currHdg)
-        buffer.setFloat(32, spd.angularSpdDps)
-        buffer.setFloat(36, spd.vertSpdFpm)
-        buffer.setInt(40, prevClearance.clearedAlt)
-        buffer.setInt(44, prevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
-        buffer.setInt(48, prevClearance.clearedIas.toInt())
+        sharedMemoryIPC.setFloat(12, pos.x)
+        sharedMemoryIPC.setFloat(16, pos.y)
+        sharedMemoryIPC.setFloat(20, alt.altitudeFt)
+        sharedMemoryIPC.setFloat(24, groundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
+        sharedMemoryIPC.setFloat(28, currHdg)
+        sharedMemoryIPC.setFloat(32, spd.angularSpdDps)
+        sharedMemoryIPC.setFloat(36, spd.vertSpdFpm)
+        sharedMemoryIPC.setInt(40, prevClearance.clearedAlt)
+        sharedMemoryIPC.setInt(44, prevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
+        sharedMemoryIPC.setInt(48, prevClearance.clearedIas.toInt())
     }
 
     private fun performAction(aircraft: GdxArrayMap<String, Aircraft>) {
@@ -237,10 +210,10 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
 
         val targetAircraft = aircraft.getValueAt(0).entity
 
-        val bytes = buffer.getByteArray(0, 4)
+        val bytes = sharedMemoryIPC.readBytes(0, 4)
         val proceedFlag = bytes[0]
         if (proceedFlag.toInt() != 1) throw IllegalStateException("$envName ProceedFlag must be 1")
-        buffer.setByte(0, 0) // Reset proceed flag
+        sharedMemoryIPC.setByte(0, 0) // Reset proceed flag
 //        println("${System.currentTimeMillis()} Proceed unset")
 
         val clearedHdg = (bytes[1] * HDG_ACTION_MULTIPLIER).toShort()

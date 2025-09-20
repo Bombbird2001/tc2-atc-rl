@@ -83,7 +83,7 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
 //            println("${System.currentTimeMillis()} Reset action ready")
 
             // Wait for action done event before continuing simulation
-            if (sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
+            if (!sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
                 // Assume RL program has exited, stop bridge loop
                 FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
                 loopExited = true
@@ -112,7 +112,7 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
             }
 
             // Wait for action done event before continuing simulation
-            if (sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
+            if (!sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
                 // Assume RL program has exited, stop bridge loop
                 FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
                 loopExited = true
@@ -154,14 +154,14 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
         sharedMemoryIPC.setByte(0, 1)
 
         // Reward from previous action
-        // Constant -0.5 per time step + decrease in distance towards LOC line segment +
+        // Constant -0.01 per time step + decrease in distance towards LOC line segment +
         // lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
         val newLocDistPx = distPxFromLoc(targetAircraft, targetApproach.value)
         val pos = targetAircraft[Position.mapper]!!
         val alt = targetAircraft[Altitude.mapper]!!
         val spd = targetAircraft[Speed.mapper]!!
         val prevClearance = getLatestClearanceState(targetAircraft)!!
-        var reward = (prevLocDistPx - newLocDistPx) / 400 + (prevAltFt - alt.altitudeFt) / 12000 - 0.01f + (clearancesChanged * -0.3f)
+        var reward = (prevLocDistPx - newLocDistPx) / 400 + (prevAltFt - alt.altitudeFt) / 12000 - 0.01f + (clearancesChanged * -0.05f)
         // Discourage aircraft from loitering too long close to LOC
         if (newLocDistPx < nmToPx(4) && alt.altitudeFt <= 6010) reward -= 0.02f
         clearancesChanged = 0

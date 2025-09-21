@@ -11,11 +11,6 @@ class WindowsSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
         const val WAIT_TIMEOUT = 0x00000102
     }
 
-    private val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
-        FILE_MAP_WRITE,
-        false,
-        "Local\\${SharedMemoryIPC.SHM_FILE_PREFIX}$envId"
-    )
     private val buffer: Pointer
 
     // Open named events
@@ -27,6 +22,11 @@ class WindowsSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
     private val envName = "[env$envId]"
 
     init {
+        val mmHandle = Kernel32.INSTANCE.OpenFileMapping(
+            FILE_MAP_WRITE,
+            false,
+            "Local\\${SharedMemoryIPC.SHM_FILE_PREFIX}$envId"
+        )
         if (mmHandle == null) {
             throw NullPointerException("$envName Got WinError ${Kernel32.INSTANCE.GetLastError()} when opening shared memory")
         }
@@ -53,19 +53,19 @@ class WindowsSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
         return Kernel32.INSTANCE.SetEvent(actionReady)
     }
 
-    override fun setByte(offset: Long, byte: Byte) {
-        buffer.setByte(offset, byte)
+    override fun setByte(offset: Int, byte: Byte) {
+        buffer.setByte(offset.toLong(), byte)
     }
 
-    override fun setFloat(offset: Long, float: Float) {
-        buffer.setFloat(offset, float)
+    override fun setFloat(offset: Int, float: Float) {
+        buffer.setFloat(offset.toLong(), float)
     }
 
-    override fun setInt(offset: Long, int: Int) {
-        buffer.setInt(offset, int)
+    override fun setInt(offset: Int, int: Int) {
+        buffer.setInt(offset.toLong(), int)
     }
 
-    override fun readBytes(offset: Long, bytes: Int): ByteArray {
-        return buffer.getByteArray(offset, bytes)
+    override fun readBytes(offset: Int, bytes: Int): ByteArray {
+        return buffer.getByteArray(offset.toLong(), bytes)
     }
 }

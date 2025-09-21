@@ -16,7 +16,7 @@ import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_CHECK
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
-import com.bombbird.terminalcontrol2.gymnasium.ipc.WindowsSharedMemory
+import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPCFactory
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.utilities.FileLog
@@ -62,12 +62,8 @@ class PythonGymnasiumBridge(envId: Int): GymnasiumBridge {
 
     val conflictManager = ConflictManager()
 
-    private val sharedMemoryIPC: SharedMemoryIPC
+    private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
-
-    init {
-        sharedMemoryIPC = WindowsSharedMemory(envId, SHM_FILE_SIZE)
-    }
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
         if (loopExited) return

@@ -1,6 +1,8 @@
 package com.bombbird.terminalcontrol2.gymnasium.ipc
 
+import com.sun.jna.Native
 import com.sun.jna.Pointer
+import com.sun.jna.platform.linux.ErrNo
 import java.nio.ByteBuffer
 
 class PosixSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
@@ -34,7 +36,12 @@ class PosixSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
 
     override fun waitForActionDone(maxWaitTimeMs: Int): Boolean {
         val timeout = Timespec((System.currentTimeMillis() + maxWaitTimeMs) / 1000, 0)
-        return PosixLibC.sem_timedwait(actionDone, timeout) == 0
+        val res = PosixLibC.sem_timedwait(actionDone, timeout)
+        if (res == -1 && Native.getLastError() == ErrNo.EINTR) {
+            // Try again, interrupted
+            return waitForActionDone(maxWaitTimeMs)
+        }
+        return res == 0
     }
 
     override fun needsResetAfterStep(): Boolean {

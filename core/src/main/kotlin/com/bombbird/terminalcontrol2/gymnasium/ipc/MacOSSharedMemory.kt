@@ -1,6 +1,8 @@
 package com.bombbird.terminalcontrol2.gymnasium.ipc
 
+import com.sun.jna.Native
 import com.sun.jna.Pointer
+import com.sun.jna.platform.linux.ErrNo
 import java.nio.ByteBuffer
 
 class MacOSSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
@@ -34,6 +36,10 @@ class MacOSSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
 
     override fun waitForActionDone(maxWaitTimeMs: Int): Boolean {
         val res = MacOSLibC.sem_wait(actionDone)
+        if (res == -1 && Native.getLastError() == ErrNo.EINTR) {
+            // Try again, interrupted
+            return waitForActionDone(maxWaitTimeMs)
+        }
         return res == 0
     }
 

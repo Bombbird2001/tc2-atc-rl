@@ -127,3 +127,44 @@ abstract class NetworkServer(
         return null
     }
 }
+
+class StubNetworkServer(
+    gameServer: GameServer,
+    onReceive: (ConnectionMeta, Any?) -> Unit,
+    onConnect: (ConnectionMeta) -> Unit,
+    onDisconnect: (ConnectionMeta) -> Unit
+): NetworkServer(gameServer, onReceive, onConnect, onDisconnect) {
+    private val kryo = Kryo()
+
+    override val serverKryo: Kryo
+        get() = kryo
+
+    override fun start(): Boolean {
+        return true
+    }
+
+    override fun stop() {}
+
+    override fun sendToAllTCP(data: Any) {}
+
+    override fun sendToAllUDP(data: Any) {}
+
+    override fun sendTCPToConnection(uuid: UUID, data: Any) {}
+
+    override fun beforeStart(): Boolean {
+        registerClassesToKryo(kryo)
+        return true
+    }
+
+    override fun getRoomId(): Short? {
+        return null
+    }
+
+    override fun getConnectionStatus(): String {
+        return "Stub network server - no connections"
+    }
+
+    override val connections: Collection<ConnectionMeta>
+        get() = emptyList()
+
+}

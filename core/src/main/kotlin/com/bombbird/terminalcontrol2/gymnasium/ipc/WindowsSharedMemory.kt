@@ -4,7 +4,7 @@ import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.Kernel32
 import com.sun.jna.platform.win32.WinNT.HANDLE
 
-class WindowsSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
+class WindowsSharedMemory(envId: String, fileSizeBytes: Int): SharedMemoryIPC {
     companion object {
         const val FILE_MAP_WRITE = 0x0002
         const val EVENT_ALL_ACCESS = 0x1F0003
@@ -14,6 +14,7 @@ class WindowsSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
     private val buffer: Pointer
 
     // Open named events
+    val trainerInitialized: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\${SharedMemoryIPC.TRAINER_INITIALIZED}$envId")
     val resetSim: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\${SharedMemoryIPC.RESET_PREFIX}$envId")
     val actionReady: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\${SharedMemoryIPC.ACTION_READY_PREFIX}$envId")
     val actionDone: HANDLE = Kernel32.INSTANCE.OpenEvent(EVENT_ALL_ACCESS, false, "Local\\${SharedMemoryIPC.ACTION_DONE_PREFIX}$envId")
@@ -35,6 +36,10 @@ class WindowsSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
             FILE_MAP_WRITE,
             0, 0, fileSizeBytes
         )
+    }
+
+    override fun waitForTrainerInitialized() {
+        Kernel32.INSTANCE.WaitForSingleObject(trainerInitialized, Kernel32.INFINITE)
     }
 
     override fun needsResetSim(): Boolean {
@@ -67,5 +72,9 @@ class WindowsSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
 
     override fun readBytes(offset: Int, bytes: Int): ByteArray {
         return buffer.getByteArray(offset.toLong(), bytes)
+    }
+
+    override fun readShort(offset: Int): Short {
+        return buffer.getShort(offset.toLong())
     }
 }

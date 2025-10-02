@@ -3,11 +3,14 @@ package com.bombbird.terminalcontrol2.gymnasium.ipc
 interface SharedMemoryIPC {
     companion object {
         const val SHM_FILE_PREFIX = "ATCRLSharedMem"
+        const val TRAINER_INITIALIZED = "ATCRLTrainerInit"
         const val RESET_PREFIX = "ATCRLResetEvent"
         const val ACTION_READY_PREFIX = "ATCRLActionReadyEvent"
         const val ACTION_DONE_PREFIX = "ATCRLActionDoneEvent"
         const val RESET_AFTER_STEP_PREFIX = "ATCRLResetAfterEvent"
     }
+
+    fun waitForTrainerInitialized()
 
     fun needsResetSim(): Boolean
 
@@ -30,10 +33,12 @@ interface SharedMemoryIPC {
     fun setInt(offset: Int, int: Int)
 
     fun readBytes(offset: Int, bytes: Int): ByteArray
+
+    fun readShort(offset: Int): Short
 }
 
 object SharedMemoryIPCFactory {
-    fun getSharedMemory(envId: Int, fileSizeBytes: Int): SharedMemoryIPC {
+    fun getSharedMemory(envId: String, fileSizeBytes: Int): SharedMemoryIPC {
         val osName = System.getProperty("os.name").lowercase()
         val isWindows = osName.contains("win")
         val isMac = osName.contains("mac")

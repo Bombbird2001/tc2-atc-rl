@@ -5,7 +5,7 @@ import com.sun.jna.Pointer
 import com.sun.jna.platform.linux.ErrNo
 import java.nio.ByteBuffer
 
-class PosixSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
+class PosixSharedMemory(envId: String, fileSizeBytes: Long): SharedMemoryIPC {
     companion object {
         const val O_RDWR = 0x0002
         const val PROT_READ = 0x1
@@ -15,6 +15,7 @@ class PosixSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
 
     private val buffer: ByteBuffer
 
+    val trainerInitialized = MacOSLibC.sem_open("${SharedMemoryIPC.TRAINER_INITIALIZED}$envId",O_RDWR)
     val resetSim = PosixLibC.sem_open("${SharedMemoryIPC.RESET_PREFIX}$envId", O_RDWR)
     val actionReady = PosixLibC.sem_open("${SharedMemoryIPC.ACTION_READY_PREFIX}$envId", O_RDWR)
     val actionDone = PosixLibC.sem_open("${SharedMemoryIPC.ACTION_DONE_PREFIX}$envId", O_RDWR)
@@ -28,6 +29,13 @@ class PosixSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
         if (Pointer.nativeValue(ptr) == -1L) throw NullPointerException("mmap failed")
 
         buffer = ptr.getByteBuffer(0, fileSizeBytes)
+    }
+
+    override fun waitForTrainerInitialized() {
+        var res = -1
+        while (res != 0) {
+            res = MacOSLibC.sem_wait(trainerInitialized)
+        }
     }
 
     override fun needsResetSim(): Boolean {
@@ -69,5 +77,9 @@ class PosixSharedMemory(envId: Int, fileSizeBytes: Long): SharedMemoryIPC {
         buffer.position(offset)
         buffer.get(result)
         return result
+    }
+
+    override fun readShort(offset: Int): Short {
+        return buffer.getShort(offset)
     }
 }

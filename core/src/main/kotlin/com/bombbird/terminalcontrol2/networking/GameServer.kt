@@ -49,7 +49,7 @@ import kotlin.math.min
  */
 class GameServer private constructor(
     airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
-    testMode: Boolean = false, envId: Int = 0, private val isHeadlessTraining: Boolean = false,
+    testMode: Boolean = false, envId: String = "0", private val isHeadlessTraining: Boolean = false,
     private val slowMode: Boolean = false
 ) {
     companion object {
@@ -72,7 +72,7 @@ class GameServer private constructor(
         const val STORMS_NIGHTMARE: Byte = 11
 
         /** Creates a new single-player mode game server object for ATC-RL headless training */
-        fun newRLGameServer(airportToHost: String, envId: Int, slowMode: Boolean): GameServer {
+        fun newRLGameServer(airportToHost: String, envId: String, slowMode: Boolean): GameServer {
             return GameServer(airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true, slowMode = slowMode)
         }
 
@@ -81,7 +81,7 @@ class GameServer private constructor(
          * @return GameServer in single-player mode
          */
         fun newSinglePlayerGameServer(airportToHost: String): GameServer {
-            return GameServer(airportToHost, null, false, 1, envId = 0, slowMode = true)
+            return GameServer(airportToHost, null, false, 1, envId = "0", slowMode = true)
         }
 
         /**
@@ -617,8 +617,11 @@ class GameServer private constructor(
         }
 
         // Log.set(Log.LEVEL_DEBUG)
-        networkServer = if (publicServer) PublicServer(this, onReceive, onConnect, onDisconnect, mainName)
-        else LANServer(this, onReceive, onConnect, onDisconnect)
+        networkServer = when {
+            isHeadlessTraining -> StubNetworkServer(this, onReceive, onConnect, onDisconnect)
+            publicServer -> PublicServer(this, onReceive, onConnect, onDisconnect, mainName)
+            else -> LANServer(this, onReceive, onConnect, onDisconnect)
+        }
         if (networkServer.beforeStart()) {
             return networkServer.start()
         }

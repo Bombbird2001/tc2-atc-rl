@@ -92,10 +92,10 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val spawnDir = MathUtils.random(360f)
     val spawnPosVec = (Vector2.Y * nmToPx(MathUtils.random(10f, 60f))).rotateDeg(-spawnDir)
     val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
-    val spawnHdg = modulateHeading(spawnDir + 180 + MAG_HDG_DEV + randomTrackJitter)
+    val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
 //    val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
 //    val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-    val spawnPos = Triple(spawnPosVec.x, spawnPosVec.y, spawnHdg)
+    val spawnPos = Triple(spawnPosVec.x, spawnPosVec.y, spawnTrack)
 
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
         entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
@@ -128,7 +128,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
             trackVectorPxps = tasVector + affectedByWind.windVectorPxps
         }
         val clearanceAct = ClearanceAct(ClearanceState("", Route(), Route(),
-                spawnHdg.roundToInt().toShort(), null,
+                spawnTrack.roundToInt().toShort(), null,
                 clearedAlt, false, ias, clearedApp = "ILS 02L", clearedTrans = "vectors").ActingClearance())
         entity += clearanceAct
         val app = airport[ApproachChildren.mapper]?.approachMap?.get("ILS 02L")?.entity!!
@@ -137,7 +137,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         entity[CommandTarget.mapper]?.apply {
             targetAltFt = cmdTargetAlt
             targetIasKt = ias
-            targetHdgDeg = modulateHeading(spawnPos.third + 180)
+            targetHdgDeg = modulateHeading(spawnPos.third + 180 + MAG_HDG_DEV)
         }
         val spds = getMinMaxOptimalIAS(entity)
         clearanceAct.actingClearance.clearanceState.apply {

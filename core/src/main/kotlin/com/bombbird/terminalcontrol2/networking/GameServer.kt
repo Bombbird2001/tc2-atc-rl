@@ -262,7 +262,7 @@ class GameServer private constructor(
 
     init {
         if (!testMode) {
-            pythonGymBridge = PythonGymnasiumBridge(envId)
+            pythonGymBridge = StubGymnasiumBridge
             initiateServer(airportToHost, saveId)
         } else {
             pythonGymBridge = StubGymnasiumBridge

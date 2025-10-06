@@ -85,44 +85,26 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         FileLog.info("TrafficTools", "Aircraft with callsign $callsign already exists")
         return
     }
-//    val randomStar = randomStar(airport)
-//    val starRoute = randomStar?.getRandomSTARRouteForRunway() ?: Route()
-//    val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
-//    val spawnPosOrig = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
-    val spawnDir = MathUtils.random(360f)
-
-    // f(r) should be proportional to r (r is spawn distance from center)
-    // F(r) = r^2 / 3575 <=> r = sqrt(3575 * F(r)) where F(r) ~ U[0,1] (Thank you ST4231)
-    val distNm = sqrt(3575 * MathUtils.random())
-
-    val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
-    val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
-    val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
-//    val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-//    val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-    val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)
-    val offsetY = -MathUtils.cosDeg(23f) * nmToPx(12.5f)
-    val spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
+    val randomStar = randomStar(airport)
+    val starRoute = randomStar?.getRandomSTARRouteForRunway() ?: Route()
+    val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
+    val spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
 
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
         entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
-//        entity += ArrivalRouteZone().apply { starZone.addAll(getZonesForArrivalRoute(origStarRoute)) }
-//        var alt = calculateArrivalSpawnAltitude(entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
-        var alt = MathUtils.random(3000f, MAX_ALT.toFloat())
+        entity += ArrivalRouteZone().apply { starZone.addAll(getZonesForArrivalRoute(origStarRoute)) }  // TODO Possible memory leak
+        var alt = calculateArrivalSpawnAltitude(entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
         alt = amendAltForNearbyTraffic(alt, spawnPos.first, spawnPos.second, entity)
         entity[Altitude.mapper]?.altitudeFt = alt
         val dir = (entity[Direction.mapper] ?: Direction()).apply { trackUnitVector.rotateDeg(-spawnPos.third - 180) }
         val aircraftPerf = entity[AircraftInfo.mapper]?.aircraftPerf ?: AircraftTypeData.AircraftPerfData()
-        val ias: Short = 250
+        val ias = calculateArrivalSpawnIAS(origStarRoute, starRoute, alt, aircraftPerf)
         val tas = calculateTASFromIAS(alt, ias.toFloat())
-//        starRoute.clear()
-//        val nextWpt = (if (starRoute.size > 0) starRoute[0] else null) as? Route.WaypointLeg
-//        val nextMinStarAlt = (ceil((getHighestMinAlt(starRoute) ?: Int.MIN_VALUE) / 1000f) * 1000).roundToInt()
-//        val nextMaxStarAlt = (floor((nextWpt?.maxAltFt ?: Int.MAX_VALUE) / 1000f) * 1000).roundToInt()
-//        val clearedAlt = min(min(getACCStartAltitude(), (alt / 1000).toInt() * 1000), nextMaxStarAlt)
-//        val cmdTargetAlt = max(clearedAlt, nextMinStarAlt)
-        val clearedAlt = min(getACCStartAltitude(), (alt / 1000).toInt() * 1000)
-        val cmdTargetAlt = clearedAlt
+        val nextWpt = (if (starRoute.size > 0) starRoute[0] else null) as? Route.WaypointLeg
+        val nextMinStarAlt = (ceil((getHighestMinAlt(starRoute) ?: Int.MIN_VALUE) / 1000f) * 1000).roundToInt()
+        val nextMaxStarAlt = (floor((nextWpt?.maxAltFt ?: Int.MAX_VALUE) / 1000f) * 1000).roundToInt()
+        val clearedAlt = min(min(getACCStartAltitude(), (alt / 1000).toInt() * 1000), nextMaxStarAlt)
+        val cmdTargetAlt = max(clearedAlt, nextMinStarAlt)
         val speed = (entity[Speed.mapper] ?: Speed()).apply {
             speedKts = tas
             // Set to vertical speed required to reach cleared altitude in 10 seconds, capped by the minimum vertical speed
@@ -134,13 +116,10 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
             val tasVector = dir.trackUnitVector * ktToPxps(speed.speedKts.toInt())
             trackVectorPxps = tasVector + affectedByWind.windVectorPxps
         }
-        val clearanceAct = ClearanceAct(ClearanceState("", Route(), Route(),
-                spawnTrack.roundToInt().toShort(), null,
-                clearedAlt, false, ias, clearedApp = "ILS 02L", clearedTrans = "vectors").ActingClearance())
+        val clearanceAct = ClearanceAct(ClearanceState(randomStar?.name ?: "", starRoute, Route(),
+                if (starRoute.size == 0) (spawnPos.third + MAG_HDG_DEV).toInt().toShort() else null, null,
+                clearedAlt, false, ias).ActingClearance())
         entity += clearanceAct
-        val app = airport[ApproachChildren.mapper]?.approachMap?.get("ILS 02L")?.entity!!
-        entity += LocalizerArmed(app)
-        entity += GlideSlopeArmed(app)
         entity[CommandTarget.mapper]?.apply {
             targetAltFt = cmdTargetAlt
             targetIasKt = ias
@@ -425,8 +404,8 @@ fun clearForTakeoff(aircraft: Entity, rwy: Entity, sid: SidStar.SID) {
         val sidRoute = sid.getRandomSIDRouteForRunway(rwyName)
         get(DepartureRouteZone.mapper)?.sidZone?.also {
             it.clear()
-            it.addAll(getZonesForInitialRunwayClimb(sidRoute, rwy))
-            it.addAll(getZonesForDepartureRoute(sidRoute))
+            it.addAll(getZonesForInitialRunwayClimb(sidRoute, rwy))  // TODO Possible memory leak
+            it.addAll(getZonesForDepartureRoute(sidRoute))  // TODO Possible memory leak
         }
         // Set initial clearance state
         this += ClearanceAct(ClearanceState(sid.name, sidRoute, Route(), null, null, initClimb,

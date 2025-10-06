@@ -62,7 +62,6 @@ class TrafficSystemInterval: IntervalSystem(1f) {
      */
     override fun updateInterval() {
         GAME.gameServer?.apply {
-            /*
             val airportArrivalStats = arrivalStatsFamilyEntities.getEntities()
             trafficMode = TrafficMode.ARRIVALS_TO_CONTROL
             when (trafficMode) {
@@ -80,6 +79,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 TrafficMode.ARRIVALS_TO_CONTROL -> {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
+                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
                         arptArrStats.targetTrafficValue = 1
                         arptArrStats.arrivalSpawnTimer -= interval
@@ -116,7 +116,6 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 }
                 else -> FileLog.warn("TrafficSystem", "Invalid traffic mode $trafficMode")
             }
-             */
 
             // I Am God achievement counter; engine update rate already takes into account game speed up
             if (trafficMode == TrafficMode.FLOW_RATE && trafficValue >= 119.9f && playersInGame == 1.toByte())
@@ -263,7 +262,6 @@ class TrafficSystemInterval: IntervalSystem(1f) {
         }
 
         // Despawn checker
-        /*
         val checkDespawn = despawnFamilyEntities.getEntities()
         for (i in 0 until checkDespawn.size()) {
             checkDespawn[i]?.apply {
@@ -284,14 +282,13 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 despawnAircraft(this)
             }
         }
-         */
 
         // Update the levels of each conflict-able entity
         updateConflictLevels()
 
         // Traffic separation checking
-//        val conflictAble = conflictAbleFamilyEntities.getEntities()
-//        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
+        val conflictAble = conflictAbleFamilyEntities.getEntities()
+        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
     }
 
     /** Creates the conflict level array upon loading world data (MAX_ALT required) */

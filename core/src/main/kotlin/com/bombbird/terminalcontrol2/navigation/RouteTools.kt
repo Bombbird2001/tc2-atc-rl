@@ -119,7 +119,7 @@ fun checkRestrChanged(route: Route, leg: WaypointLeg): Triple<Boolean, Boolean, 
  * @param posY the y coordinate of the new waypoint
  * @return the wptID of the new created waypoint
  */
-fun createCustomHoldWaypoint(posX: Float, posY: Float): Short {
+fun createCustomHoldWaypoint(posX: Float, posY: Float, customName: String = ""): Short {
     // Search for an available ID below -1
     var wptId: Short? = null
     for (i in -2 downTo Short.MIN_VALUE) if (getServerWaypointMap()?.containsKey(i.toShort()) == false) {
@@ -131,7 +131,7 @@ fun createCustomHoldWaypoint(posX: Float, posY: Float): Short {
         return 0
     }
     // Create the waypoint, add to gameServer, and send data to clients
-    val newWpt = Waypoint(wptId, "", posX.toInt().toShort(), posY.toInt().toShort(), false)
+    val newWpt = Waypoint(wptId, customName, posX.toInt().toShort(), posY.toInt().toShort(), false)
     GAME.gameServer?.apply {
         waypoints[wptId] = newWpt
         sendCustomWaypointAdditionToAll(newWpt)

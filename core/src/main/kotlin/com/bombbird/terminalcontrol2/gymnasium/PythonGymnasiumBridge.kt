@@ -88,6 +88,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                 val newAircraft = resetAircraft()
                 needsNewLocation = writeState(newAircraft)
             }
+            val newAc = aircraft.getValueAt(0).entity
+            prevLocDistPx = distPxFromLoc(newAc, targetApproach.value)
+            prevAltFt = newAc[Altitude.mapper]!!.altitudeFt
             terminating = false
             sharedMemoryIPC.signalActionReady()
 //            println("${System.currentTimeMillis()} Reset action ready")
@@ -179,9 +182,11 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         val alt = targetAircraft[Altitude.mapper]!!
         val spd = targetAircraft[Speed.mapper]!!
         val prevClearance = getLatestClearanceState(targetAircraft)!!
-        var reward = (prevLocDistPx - newLocDistPx) / 1600 + (prevAltFt - alt.altitudeFt) / 12000 - 0.03f - clearancesChangePenalty
+        val distReward = (prevLocDistPx - newLocDistPx) / 1600
+        val altReward = (prevAltFt - alt.altitudeFt) / 12000
+        var reward = distReward + altReward - 0.03f - clearancesChangePenalty
         // Discourage aircraft from loitering too long close to LOC
-        if (newLocDistPx < nmToPx(4) && alt.altitudeFt <= 6010) reward -= 0.02f
+        if (newLocDistPx < nmToPx(4) && alt.altitudeFt <= 6010) reward -= 0.06f
         clearancesChangePenalty = 0f
         prevLocDistPx = newLocDistPx
         prevAltFt = alt.altitudeFt
@@ -243,6 +248,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
         val prevClearance = getLatestClearanceState(targetAircraft)!!
         clearancesChangePenalty = (
+//            ((prevClearance.vectorHdg?.let {
+//                (findDeltaHeading(it.toFloat(), clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT) > 2).toInt() * 0.15f
+//            }) ?: 0f) +
             (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.15f +
             (clearedAlt != prevClearance.clearedAlt).toInt() * 0.15f +
             (clearedIas != prevClearance.clearedIas).toInt() * 0.15f

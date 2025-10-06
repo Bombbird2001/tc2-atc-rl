@@ -90,12 +90,19 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
 //    val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
 //    val spawnPosOrig = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
     val spawnDir = MathUtils.random(360f)
-    val spawnPosVec = (Vector2.Y * nmToPx(MathUtils.random(10f, 60f))).rotateDeg(-spawnDir)
+
+    // f(r) should be proportional to r (r is spawn distance from center)
+    // F(r) = r^2 / 3575 <=> r = sqrt(3575 * F(r)) where F(r) ~ U[0,1] (Thank you ST4231)
+    val distNm = sqrt(3575 * MathUtils.random())
+
+    val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
     val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
     val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
 //    val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
 //    val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-    val spawnPos = Triple(spawnPosVec.x, spawnPosVec.y, spawnTrack)
+    val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)
+    val offsetY = -MathUtils.cosDeg(23f) * nmToPx(12.5f)
+    val spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
 
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
         entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)

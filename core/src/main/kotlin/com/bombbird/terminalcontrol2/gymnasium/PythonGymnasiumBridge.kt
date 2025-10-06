@@ -179,7 +179,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         val alt = targetAircraft[Altitude.mapper]!!
         val spd = targetAircraft[Speed.mapper]!!
         val prevClearance = getLatestClearanceState(targetAircraft)!!
-        var reward = (prevLocDistPx - newLocDistPx) / 400 + (prevAltFt - alt.altitudeFt) / 12000 - 0.03f - clearancesChangePenalty
+        var reward = (prevLocDistPx - newLocDistPx) / 1600 + (prevAltFt - alt.altitudeFt) / 12000 - 0.03f - clearancesChangePenalty
         // Discourage aircraft from loitering too long close to LOC
         if (newLocDistPx < nmToPx(4) && alt.altitudeFt <= 6010) reward -= 0.02f
         clearancesChangePenalty = 0f
@@ -191,12 +191,12 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         }
         var shouldTerminate: Byte = 0
         if (isLocCap == 1.byte) {
-            reward += 4
+            reward += 1
             shouldTerminate = 1
         }
         val conflicts = conflictManager.getConflictCountRL(ImmutableArray(GdxArray(arrayOf(targetAircraft))))
         if (conflicts > 0) {
-            reward -= 5
+            reward -= 1
             shouldTerminate = 1
         }
         sharedMemoryIPC.setFloat(4, reward)
@@ -243,9 +243,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
         val prevClearance = getLatestClearanceState(targetAircraft)!!
         clearancesChangePenalty = (
-            (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 3).toInt() * 0.05f +
-            (clearedAlt != prevClearance.clearedAlt).toInt() * 0.05f +
-            (clearedIas != prevClearance.clearedIas).toInt() * 0.05f
+            (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.15f +
+            (clearedAlt != prevClearance.clearedAlt).toInt() * 0.15f +
+            (clearedIas != prevClearance.clearedIas).toInt() * 0.15f
         )
         val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
         addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)

@@ -1,6 +1,5 @@
 package com.bombbird.terminalcontrol2.gymnasium
 
-import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.Vector2
 import com.bombbird.terminalcontrol2.components.Altitude
@@ -51,6 +50,23 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         const val SPD_ACTION_ADDER = 160
 
         const val LOOP_EXIT_MS = 15000
+
+        fun distPxFromLoc(acPos: Position, approach: Approach): Float {
+            val pos = approach.entity[Position.mapper]!!
+            val loc = approach.entity[Localizer.mapper]!!
+            val dir = approach.entity[Direction.mapper]!!.trackUnitVector
+            val gs = approach.entity[GlideSlope.mapper]
+
+            val offsetNm = gs?.offsetNm ?: 0f
+            dir.setLength((nmToPx(1) - nmToPx(offsetNm)))
+            val startPos = Vector2(pos.x, pos.y)
+            startPos.plusAssign(dir)
+            val endPos = Vector2(startPos)
+            dir.setLength(nmToPx(loc.maxDistNm.toInt()))
+            endPos.plusAssign(dir)
+
+            return distPxFromPolygon(floatArrayOf(startPos.x, startPos.y, endPos.x, endPos.y), acPos.x, acPos.y)
+        }
     }
 
     var framesToAction = FRAMES_PER_ACTION
@@ -89,7 +105,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                 needsNewLocation = writeState(newAircraft)
             }
             val newAc = aircraft.getValueAt(0).entity
-            prevLocDistPx = distPxFromLoc(newAc, targetApproach.value)
+            prevLocDistPx = distPxFromLoc(newAc[Position.mapper]!!, targetApproach.value)
             prevAltFt = newAc[Altitude.mapper]!!.altitudeFt
             terminating = false
             sharedMemoryIPC.signalActionReady()
@@ -146,24 +162,6 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         }
     }
 
-    private fun distPxFromLoc(aircraft: Entity, approach: Approach): Float {
-        val acPos = aircraft[Position.mapper]!!
-        val pos = approach.entity[Position.mapper]!!
-        val loc = approach.entity[Localizer.mapper]!!
-        val dir = approach.entity[Direction.mapper]!!.trackUnitVector
-        val gs = approach.entity[GlideSlope.mapper]
-
-        val offsetNm = gs?.offsetNm ?: 0f
-        dir.setLength((nmToPx(1) - nmToPx(offsetNm)))
-        val startPos = Vector2(pos.x, pos.y)
-        startPos.plusAssign(dir)
-        val endPos = Vector2(startPos)
-        dir.setLength(nmToPx(loc.maxDistNm.toInt()))
-        endPos.plusAssign(dir)
-
-        return distPxFromPolygon(floatArrayOf(startPos.x, startPos.y, endPos.x, endPos.y), acPos.x, acPos.y)
-    }
-
     private fun writeState(aircraft: GdxArrayMap<String, Aircraft>): Boolean {
         if (aircraft.size != 1) {
             throw IllegalArgumentException("$envName Aircraft must have exactly 1 item, got ${aircraft.size} instead")
@@ -177,7 +175,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         // Reward from previous action
         // Constant -0.01 per time step + decrease in distance towards LOC line segment +
         // lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
-        val newLocDistPx = distPxFromLoc(targetAircraft, targetApproach.value)
+        val newLocDistPx = distPxFromLoc(targetAircraft[Position.mapper]!!, targetApproach.value)
         val pos = targetAircraft[Position.mapper]!!
         val alt = targetAircraft[Altitude.mapper]!!
         val spd = targetAircraft[Speed.mapper]!!

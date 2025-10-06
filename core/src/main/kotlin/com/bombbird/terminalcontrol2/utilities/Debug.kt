@@ -4,11 +4,13 @@ import com.badlogic.ashley.core.*
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.GeometryUtils
+import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.global.*
+import com.bombbird.terminalcontrol2.gymnasium.PythonGymnasiumBridge
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.navigation.calculateRouteSegments
 import com.bombbird.terminalcontrol2.systems.TrafficSystemInterval
@@ -23,6 +25,7 @@ import ktx.scene2d.Scene2DSkin
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
+import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -110,6 +113,55 @@ fun toggleMinAltSectorsOnClick(x: Float, y: Float, unprojectFromRadarCamera: (Fl
                     updateStyle(if (label.style.fontColor == Color.ORANGE) "MinAltSector" else "MinAltSectorRestr")
                 }
             }
+        }
+    }
+}
+
+fun heatmapColor(value: Float): Color {
+//    return when {
+//        value < 5 -> Color.BLUE
+//        value < 10 -> Color.CYAN
+//        value < 15 -> Color.ORANGE
+//        else -> Color.RED
+//    }
+    val clamped = value.coerceIn(0.0f, 75.0f)
+    val t = clamped / 75.0f
+
+    // Define anchor colors (in RGB)
+    val colors = listOf(
+        floatArrayOf(0f, 0f, 1f),   // blue
+        floatArrayOf(0f, 1f, 1f),   // cyan
+        floatArrayOf(0f, 1f, 0f),   // green
+        floatArrayOf(1f, 1f, 0f),   // yellow
+        floatArrayOf(1f, 0f, 0f)    // red
+    )
+
+    // Compute which segment we're in
+    val segment = t * (colors.size - 1)
+    val i = floor(segment).toInt().coerceIn(0, colors.size - 2)
+    val localT = segment - i
+
+    // Interpolate between the two nearest colors
+    val c0 = colors[i]
+    val c1 = colors[i + 1]
+    val r = (c0[0] + (c1[0] - c0[0]) * localT)
+    val g = (c0[1] + (c1[1] - c0[1]) * localT)
+    val b = (c0[2] + (c1[2] - c0[2]) * localT)
+
+    return Color(r, g, b, 1f)
+}
+
+fun renderRewardValues(shapeRenderer: ShapeRenderer) {
+    val app = GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L") ?: return
+    val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)
+    val offsetY = -MathUtils.cosDeg(23f) * nmToPx(12.5f)
+    for (x in -50..50) {
+        for (y in -50..50) {
+            val pxX = nmToPx(x) + offsetX
+            val pxY = nmToPx(y) + offsetY
+            val distNm = pxToNm(PythonGymnasiumBridge.distPxFromLoc(Position(pxX, pxY), app))
+            shapeRenderer.color = heatmapColor(distNm)
+            shapeRenderer.circle(pxX, pxY, 5f)
         }
     }
 }

@@ -81,7 +81,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                         val arptEntity = airportArrivalStats[i]
                         if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.targetTrafficValue = 1
+                        arptArrStats.targetTrafficValue = 10
                         arptArrStats.arrivalSpawnTimer -= interval
                         if (arptArrStats.arrivalSpawnTimer > 0) continue
 

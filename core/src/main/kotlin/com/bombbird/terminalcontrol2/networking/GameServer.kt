@@ -4,12 +4,12 @@ import com.badlogic.ashley.core.Engine
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.Polygon
 import com.badlogic.gdx.utils.ArrayMap.Entries
+import com.bombbird.terminalcontrol2.ai.holdanddispatch.HoldAndDispatch
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.*
 import com.bombbird.terminalcontrol2.files.*
 import com.bombbird.terminalcontrol2.global.*
 import com.bombbird.terminalcontrol2.gymnasium.GymnasiumBridge
-import com.bombbird.terminalcontrol2.gymnasium.PythonGymnasiumBridge
 import com.bombbird.terminalcontrol2.gymnasium.StubGymnasiumBridge
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
@@ -257,6 +257,8 @@ class GameServer private constructor(
     private val pythonGymBridge: GymnasiumBridge
     private val envName = "env[$envId]"
 
+    private val baselineAI = HoldAndDispatch(this)
+
     // Loading screen callbacks
     var serverStartedCallback: (() -> Unit)? = null
 
@@ -348,6 +350,7 @@ class GameServer private constructor(
                     return@thread
                 }
                 startTime = -1L
+                baselineAI.init()
                 FileLog.info("GameServer", "Game server started")
                 serverStartedCallback?.invoke()
                 GAME.achievementManager.resetGodCounter()
@@ -726,6 +729,8 @@ class GameServer private constructor(
         while (true) {
             pendingRunnablesQueue.poll()?.run() ?: break
         }
+
+        baselineAI.update(aircraft)
 
         pythonGymBridge.update(aircraft) {
             // Reset function - despawn current aircraft, create new aircraft

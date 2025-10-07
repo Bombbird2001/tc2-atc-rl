@@ -199,7 +199,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         }
         val conflicts = conflictManager.getConflictCountRL(ImmutableArray(GdxArray(arrayOf(targetAircraft))))
         if (conflicts > 0) {
-            reward -= 1
+            reward -= 2
             shouldTerminate = 1
         }
         sharedMemoryIPC.setFloat(4, reward)
@@ -249,9 +249,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 //            ((prevClearance.vectorHdg?.let {
 //                (findDeltaHeading(it.toFloat(), clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT) > 2).toInt() * 0.15f
 //            }) ?: 0f) +
-            (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.15f +
-            (clearedAlt != prevClearance.clearedAlt).toInt() * 0.15f +
-            (clearedIas != prevClearance.clearedIas).toInt() * 0.15f
+            (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.025f +
+            (clearedAlt != prevClearance.clearedAlt).toInt() * 0.025f +
+            (clearedIas != prevClearance.clearedIas).toInt() * 0.025f
         )
         val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
         addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)

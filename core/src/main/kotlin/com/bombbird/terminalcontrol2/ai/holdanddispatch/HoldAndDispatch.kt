@@ -1,38 +1,51 @@
 package com.bombbird.terminalcontrol2.ai.holdanddispatch
 
 import com.badlogic.gdx.math.MathUtils
+import com.badlogic.gdx.math.Vector2
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
 import com.bombbird.terminalcontrol2.components.ClearanceAct
 import com.bombbird.terminalcontrol2.components.CommandTarget
 import com.bombbird.terminalcontrol2.components.Direction
+import com.bombbird.terminalcontrol2.components.GroundTrack
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
+import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
+import com.bombbird.terminalcontrol2.global.HALF_TURN_RATE_THRESHOLD_IAS
+import com.bombbird.terminalcontrol2.global.MAX_HIGH_SPD_ANGULAR_SPD
+import com.bombbird.terminalcontrol2.global.MAX_LOW_SPD_ANGULAR_SPD
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.networking.GameServer
+import com.bombbird.terminalcontrol2.traffic.WakeMatrix
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
+import com.bombbird.terminalcontrol2.utilities.calculateIASFromTAS
 import com.bombbird.terminalcontrol2.utilities.convertWorldAndRenderDeg
+import com.bombbird.terminalcontrol2.utilities.findDeltaHeading
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
+import com.bombbird.terminalcontrol2.utilities.getRequiredTrack
 import com.bombbird.terminalcontrol2.utilities.nmToPx
 import ktx.ashley.get
 import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.set
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 class HoldAndDispatch(private val gs: GameServer) {
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
-    private val distNmFromFAF = 8
+    private val distNmFromFAF = 10
     private val offsetAngle = 30
-    private val dispatchSpacingNm = 4.5f
+    private val dispatchSpacingBufferNm = 0.5f
     private val holdAltInterval = 2000
     private var lastDispatchedAircraft: Aircraft? = null
     private lateinit var targetLocPoint: Position
@@ -54,9 +67,9 @@ class HoldAndDispatch(private val gs: GameServer) {
 
         val distPx = nmToPx(distNmFromFAF)
         holdingStacks.add(HoldStack(
-            targetLocPoint.x - MathUtils.sinDeg(targetAppTrack + offsetAngle) * distPx,
-            targetLocPoint.y - MathUtils.cosDeg(targetAppTrack + offsetAngle) * distPx,
-            5000, 53, 5, CommandTarget.TURN_LEFT, "ILS-02L-LEFT-HOLD", holdAltInterval
+            targetLocPoint.x - MathUtils.sinDeg(targetAppTrack + offsetAngle - 10) * distPx,
+            targetLocPoint.y - MathUtils.cosDeg(targetAppTrack + offsetAngle - 10) * distPx,
+            5000, 43, 5, CommandTarget.TURN_LEFT, "ILS-02L-LEFT-HOLD", holdAltInterval
         ))
 
         holdingStacks.add(HoldStack(
@@ -98,6 +111,7 @@ class HoldAndDispatch(private val gs: GameServer) {
                         newRoute.removeIndex(newRoute.size - 1)
                         newRoute.add(holdingStacks[1].getWptLeg())
                         newRoute.add(holdingStacks[1].getHoldLeg())
+                        if (lastLegWptId == 31) (newRoute[newRoute.size - 3] as Route.WaypointLeg).spdRestrActive = false
                         newClearance = latestClearance.copy(route = newRoute)
                         holdStackId = 1
                     } else if (secondLastWptId == 34 && lastLegWptId == 31) {
@@ -106,6 +120,7 @@ class HoldAndDispatch(private val gs: GameServer) {
                         newRoute.setToRouteCopy(latestClearance.route)
                         newRoute.add(holdingStacks[1].getWptLeg())
                         newRoute.add(holdingStacks[1].getHoldLeg())
+                        (newRoute[newRoute.size - 3] as Route.WaypointLeg).spdRestrActive = false
                         newClearance = latestClearance.copy(route = newRoute)
                         holdStackId = 1
                     } else {
@@ -153,7 +168,10 @@ class HoldAndDispatch(private val gs: GameServer) {
         var nextStackToDispatchFrom: HoldStack? = null
         var lowestEntryTime = Int.MAX_VALUE
         for (holdStack in holdingStacks) {
+            holdStack.sortHoldAircraftByClearedAlt()
             val firstAc = holdStack.getFirstInHoldAircraft() ?: continue
+            val alt = firstAc.aircraft.entity[Altitude.mapper]!!
+            if ((alt.altitudeFt - holdStack.minAlt) > 500) continue
             if (firstAc.tickEnteredHold < lowestEntryTime) {
                 nextStackToDispatchFrom = holdStack
                 lowestEntryTime = firstAc.tickEnteredHold
@@ -163,16 +181,33 @@ class HoldAndDispatch(private val gs: GameServer) {
         }
 
         if (nextStackToDispatchFrom != null) {
-            nextStackToDispatchFrom.sortHoldAircraftByClearedAlt()
             val ac = nextStackToDispatchFrom.getFirstInHoldAircraft()!!.aircraft
-            val alt = ac.entity[Altitude.mapper]!!
-            val dispatch = ((alt.altitudeFt - nextStackToDispatchFrom.minAlt) < 500) && (lastDispatchedAircraft?.let {
+            val dispatch = lastDispatchedAircraft?.let {
                 val acPos = ac.entity[Position.mapper]!!
-                val distPx = calculateDistanceBetweenPoints(acPos.x, acPos.y, targetLocPoint.x, targetLocPoint.y)
+                val altitude = ac.entity[Altitude.mapper]!!.altitudeFt
+                val turnRate = if (calculateIASFromTAS(altitude, ac.entity[Speed.mapper]!!.speedKts) > HALF_TURN_RATE_THRESHOLD_IAS) MAX_HIGH_SPD_ANGULAR_SPD else MAX_LOW_SPD_ANGULAR_SPD
+                val groundTrack = ac.entity[GroundTrack.mapper]!!.trackVectorPxps
+                val estimatedTravelDistPx = calculateDistanceToPointWithTurn(acPos.x, acPos.y, targetLocPoint.x, targetLocPoint.y, groundTrack, turnRate, groundTrack.len())
                 val lastDispatchedPos = it.entity[Position.mapper]!!
+                if (abs(findDeltaHeading(
+                        convertWorldAndRenderDeg(it.entity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
+                        getRequiredTrack(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y),
+                        CommandTarget.TURN_DEFAULT
+                )) > 30) return@let false
                 val lastDispatchedPx = calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y)
-                (distPx - lastDispatchedPx) >= nmToPx(dispatchSpacingNm)
-            } ?: true)
+                val leaderInfo = it.entity[AircraftInfo.mapper]!!
+                val followerInfo = ac.entity[AircraftInfo.mapper]!!
+                val minimumDispatchDistNmRequired = max(WakeMatrix.getDistanceRequired(
+                    leaderInfo.aircraftPerf.wakeCategory, leaderInfo.aircraftPerf.recat,
+                    followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat
+                ).toFloat(), 2.5f)
+                val additionalSpacingNm = 6.4f * (190 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
+                        max(0f, minimumDispatchDistNmRequired - 6.4f) * (195 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
+                        (if (minimumDispatchDistNmRequired < 2.6f) -0.75f else 0f)
+                        4.4f * 30 / 190 +
+                        dispatchSpacingBufferNm
+                (estimatedTravelDistPx - lastDispatchedPx) >= nmToPx(minimumDispatchDistNmRequired + additionalSpacingNm)
+            } ?: true
 
             if (dispatch) {
                 val latestClearance = getLatestClearanceState(ac.entity)!!
@@ -185,5 +220,26 @@ class HoldAndDispatch(private val gs: GameServer) {
                 acStates[ac.entity[AircraftInfo.mapper]!!.icaoCallsign] = AIState.EXITED_HOLD
             }
         }
+    }
+
+    fun calculateDistanceToPointWithTurn(posX: Float, posY: Float, destX: Float, destY: Float, dir: Vector2, maxTurnRateDegPerS: Float, gsPxps: Float): Float {
+        val turnRadiusPx = gsPxps / Math.toRadians(maxTurnRateDegPerS.toDouble()).toFloat()
+        val degreeOffset = abs(
+            findDeltaHeading(
+                convertWorldAndRenderDeg(dir.angleDeg()),
+                getRequiredTrack(posX, posY, destX, destY),
+                CommandTarget.TURN_DEFAULT
+            )
+        )
+        val horizontalOffset = turnRadiusPx * if (degreeOffset <= 90) {
+            MathUtils.sinDeg(degreeOffset)
+        } else {
+            1 - MathUtils.cosDeg(degreeOffset)
+        }
+
+        val verticalOffset = turnRadiusPx * MathUtils.sinDeg(degreeOffset)
+        val distFromPoint = calculateDistanceBetweenPoints(posX, posY, destX, destY)
+
+        return sqrt((distFromPoint - verticalOffset).pow(2) + horizontalOffset.pow(2)) + turnRadiusPx * Math.toRadians(degreeOffset.toDouble()).toFloat()
     }
 }

@@ -179,7 +179,7 @@ class AISystem: EntitySystem() {
 
         val landingsPerHour = prevLandingQueue.size / (prevLandingQueue.last() - prevLandingQueue.first()) * 3600
 
-        println("Landings per hour: $landingsPerHour")
+        CsvTools.writeToCsv("arrival_rate.csv", listOf("Time (s)", "Arrival rate (last 30 aircraft)"), listOf(timePassed, landingsPerHour))
     }
 
     /** Set the acceleration for landing aircraft */

@@ -63,25 +63,23 @@ class TrafficSystemInterval: IntervalSystem(1f) {
     override fun updateInterval() {
         GAME.gameServer?.apply {
             val airportArrivalStats = arrivalStatsFamilyEntities.getEntities()
-            trafficMode = TrafficMode.ARRIVALS_TO_CONTROL
             when (trafficMode) {
-                TrafficMode.NORMAL -> {
-                    // Arrival spawning timer - normal traffic mode only
-                    arrivalSpawnTimerS -= interval
-                    if (arrivalSpawnTimerS < 0) {
-                        val arrivalCount = arrivalFamilyEntities.getEntities().filter { it[FlightType.mapper]?.type == FlightType.ARRIVAL }.size
-                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
-                        arrivalSpawnTimerS = 90f - 10 * (trafficValue - arrivalCount)
-                        arrivalSpawnTimerS = MathUtils.clamp(arrivalSpawnTimerS, 50f, 80f)
-                        if (arrivalCount < trafficValue.toInt()) createRandomArrival(Entries(airports).map { it.value }, this)
-                    }
-                }
+//                TrafficMode.NORMAL -> {
+//                    // Arrival spawning timer - normal traffic mode only
+//                    arrivalSpawnTimerS -= interval
+//                    if (arrivalSpawnTimerS < 0) {
+//                        val arrivalCount = arrivalFamilyEntities.getEntities().filter { it[FlightType.mapper]?.type == FlightType.ARRIVAL }.size
+//                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
+//                        arrivalSpawnTimerS = 90f - 10 * (trafficValue - arrivalCount)
+//                        arrivalSpawnTimerS = MathUtils.clamp(arrivalSpawnTimerS, 50f, 80f)
+//                        if (arrivalCount < trafficValue.toInt()) createRandomArrival(Entries(airports).map { it.value }, this)
+//                    }
+//                }
                 TrafficMode.ARRIVALS_TO_CONTROL -> {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
                         if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.targetTrafficValue = 16
                         arptArrStats.arrivalSpawnTimer -= interval
                         if (arptArrStats.arrivalSpawnTimer > 0) continue
 
@@ -100,6 +98,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 TrafficMode.FLOW_RATE -> {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
+                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         if (arptEntity.has(ArrivalClosed.mapper)) continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
                         arptArrStats.arrivalSpawnTimer -= interval

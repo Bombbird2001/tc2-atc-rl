@@ -730,7 +730,7 @@ class GameServer private constructor(
             pendingRunnablesQueue.poll()?.run() ?: break
         }
 
-        baselineAI.update(aircraft)
+        baselineAI.update(aircraft, delta)
 
         pythonGymBridge.update(aircraft) {
             // Reset function - despawn current aircraft, create new aircraft

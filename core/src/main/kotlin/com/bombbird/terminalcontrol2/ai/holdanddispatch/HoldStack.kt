@@ -12,7 +12,7 @@ import ktx.ashley.get
 import ktx.collections.GdxArray
 import ktx.collections.sortBy
 
-class AircraftHold(val aircraft: Aircraft, val tickEnteredHold: Int)
+class AircraftHold(val aircraft: Aircraft, val timeEnteredHold: Float)
 
 class HoldStack(
     posX: Float, posY: Float, val minAlt: Int, private val inboundHdg: Short,
@@ -22,11 +22,6 @@ class HoldStack(
     private val wptId = createCustomHoldWaypoint(posX, posY, customName)
     private val inHoldStack = GdxArray<AircraftHold>()
     private val pendingEnterHold = GdxArray<Aircraft>()
-    private var tick = 0
-
-    fun tick() {
-        tick++
-    }
 
     fun sortHoldAircraftByClearedAlt() {
         inHoldStack.sortBy { hold -> getLatestClearanceState(hold.aircraft.entity)!!.clearedAlt }
@@ -55,8 +50,8 @@ class HoldStack(
         }
     }
 
-    fun addAircraftToHold(aircraft: Aircraft) {
-        inHoldStack.add(AircraftHold(aircraft, tick))
+    fun addAircraftToHold(aircraft: Aircraft, timeEnteredHold: Float) {
+        inHoldStack.add(AircraftHold(aircraft, timeEnteredHold))
     }
 
     fun addAircraftToEnteringHold(aircraft: Aircraft) {
@@ -115,5 +110,9 @@ class HoldStack(
 
     fun getWptLeg(): Route.WaypointLeg {
         return Route.WaypointLeg(wptId, null, minAlt, 250, legActive = true, altRestrActive = true, spdRestrActive = true)
+    }
+
+    fun getHoldingCount(): Int {
+        return inHoldStack.size
     }
 }

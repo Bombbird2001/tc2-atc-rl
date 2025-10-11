@@ -2,6 +2,7 @@ package com.bombbird.terminalcontrol2.ai.holdanddispatch
 
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
+import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
@@ -21,6 +22,7 @@ import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.networking.GameServer
 import com.bombbird.terminalcontrol2.traffic.WakeMatrix
+import com.bombbird.terminalcontrol2.utilities.CsvTools
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
@@ -60,6 +62,9 @@ class HoldAndDispatch(private val gs: GameServer) {
     private val acStates: GdxArrayMap<String, AIState> = GdxArrayMap()
     private val assignedStack: GdxArrayMap<String, HoldStack> = GdxArrayMap()
 
+    private var timePassed = 0f
+    private var holdingTimeQueue = Queue<Float>()
+
     fun init() {
         targetLocPoint = gs.waypoints[gs.updatedWaypointMapping["MENNU"]]!!.entity[Position.mapper]!!
         targetApp = gs.airports[0].entity[ApproachChildren.mapper]!!.approachMap["ILS 02L"]!!
@@ -79,7 +84,9 @@ class HoldAndDispatch(private val gs: GameServer) {
         ))
     }
 
-    fun update(aircraft: GdxArrayMap<String, Aircraft>) {
+    fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float) {
+        var holdCountChanged = false
+
         for (i in 0 until aircraft.size) {
             val ac = aircraft.getValueAt(i)
             val callsign = ac.entity[AircraftInfo.mapper]!!.icaoCallsign
@@ -156,7 +163,8 @@ class HoldAndDispatch(private val gs: GameServer) {
                         addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
                         currentClearedAlt -= holdAltInterval
                     }
-                    stack.addAircraftToHold(ac)
+                    stack.addAircraftToHold(ac, timePassed)
+                    holdCountChanged = true
                 }
             }
         }
@@ -166,18 +174,16 @@ class HoldAndDispatch(private val gs: GameServer) {
         }
 
         var nextStackToDispatchFrom: HoldStack? = null
-        var lowestEntryTime = Int.MAX_VALUE
+        var lowestEntryTime = Float.MAX_VALUE
         for (holdStack in holdingStacks) {
             holdStack.sortHoldAircraftByClearedAlt()
             val firstAc = holdStack.getFirstInHoldAircraft() ?: continue
             val alt = firstAc.aircraft.entity[Altitude.mapper]!!
             if ((alt.altitudeFt - holdStack.minAlt) > 500) continue
-            if (firstAc.tickEnteredHold < lowestEntryTime) {
+            if (firstAc.timeEnteredHold < lowestEntryTime) {
                 nextStackToDispatchFrom = holdStack
-                lowestEntryTime = firstAc.tickEnteredHold
+                lowestEntryTime = firstAc.timeEnteredHold
             }
-
-            holdStack.tick()
         }
 
         if (nextStackToDispatchFrom != null) {
@@ -201,25 +207,47 @@ class HoldAndDispatch(private val gs: GameServer) {
                     leaderInfo.aircraftPerf.wakeCategory, leaderInfo.aircraftPerf.recat,
                     followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat
                 ).toFloat(), 2.5f)
-                val additionalSpacingNm = 6.4f * (190 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
-                        max(0f, minimumDispatchDistNmRequired - 6.4f) * (195 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
-                        (if (minimumDispatchDistNmRequired < 2.6f) -0.75f else 0f)
+                val additionalSpacingNm = 6.4f * (195 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
+                        max(0f, minimumDispatchDistNmRequired - 6.4f) * (200 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
+                        (if (minimumDispatchDistNmRequired < 2.6f) -0.5f else 0f)
                         4.4f * 30 / 190 +
                         dispatchSpacingBufferNm
                 (estimatedTravelDistPx - lastDispatchedPx) >= nmToPx(minimumDispatchDistNmRequired + additionalSpacingNm)
             } ?: true
 
+            holdCountChanged = holdCountChanged || dispatch
             if (dispatch) {
                 val latestClearance = getLatestClearanceState(ac.entity)!!
                 val newClearance = latestClearance.copy(route = Route().apply { setToRouteCopy(targetApp.routeLegs) }, clearedAlt = 3500, clearedApp = "ILS 02L", clearedTrans = "vectors")
                 addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
-                nextStackToDispatchFrom.removeFirstInHoldAircraft()
+                val holdInfo = nextStackToDispatchFrom.removeFirstInHoldAircraft()
                 nextStackToDispatchFrom.clearAllHoldingAircraftDownwards()
                 nextStackToDispatchFrom.clearAllPendingEnterAircraftDownwards()
                 lastDispatchedAircraft = ac
                 acStates[ac.entity[AircraftInfo.mapper]!!.icaoCallsign] = AIState.EXITED_HOLD
+                updateHoldingTimeStatistics(timePassed - holdInfo.timeEnteredHold)
             }
         }
+
+        if (holdCountChanged) {
+            updateHoldingCountStatistics(holdingStacks.sumOf { it.getHoldingCount() })
+        }
+
+        timePassed += deltaTime
+    }
+
+    private fun updateHoldingTimeStatistics(newHoldingTime: Float) {
+        holdingTimeQueue.addLast(newHoldingTime)
+
+        if (holdingTimeQueue.size > 30) holdingTimeQueue.removeFirst()
+
+        val holdingTime = holdingTimeQueue.average().toFloat()
+
+        CsvTools.writeToCsv("holding_time.csv", listOf("Time (s)", "Holding time (last 30 aircraft)"), listOf(timePassed, holdingTime))
+    }
+
+    private fun updateHoldingCountStatistics(newHoldCount: Int) {
+        CsvTools.writeToCsv("holding_count.csv", listOf("Time (s)", "Aircraft in hold"), listOf(timePassed, newHoldCount.toFloat()))
     }
 
     fun calculateDistanceToPointWithTurn(posX: Float, posY: Float, destX: Float, destY: Float, dir: Vector2, maxTurnRateDegPerS: Float, gsPxps: Float): Float {

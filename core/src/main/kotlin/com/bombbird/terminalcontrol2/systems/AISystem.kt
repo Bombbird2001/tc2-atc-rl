@@ -6,6 +6,7 @@ import com.badlogic.ashley.core.Family
 import com.badlogic.gdx.math.Intersector
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
+import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.global.*
 import com.bombbird.terminalcontrol2.navigation.*
@@ -99,6 +100,9 @@ class AISystem: EntitySystem() {
     private val stayOnRunwayFamilyEntities = FamilyWithListener.newServerFamilyWithListener(stayOnRunwayFamily)
     private val initiateGoAroundFamilyEntities = FamilyWithListener.newServerFamilyWithListener(initiateGoAroundFamily)
 
+    private var timePassed = 0f
+    private var prevLandingQueue = Queue<Float>()
+
     /** Main update function */
     override fun update(deltaTime: Float) {
         updateTakeoffAcceleration()
@@ -108,6 +112,8 @@ class AISystem: EntitySystem() {
         updateApproaches(deltaTime)
         update10000ftSpeed()
         updateInitialArrival()
+
+        timePassed += deltaTime
     }
 
     /** Set the acceleration for takeoff aircraft */
@@ -165,6 +171,17 @@ class AISystem: EntitySystem() {
         }
     }
 
+    private fun updateArrivalStatistics() {
+        prevLandingQueue.addLast(timePassed)
+
+        if (prevLandingQueue.size < 2) return
+        if (prevLandingQueue.size > 30) prevLandingQueue.removeFirst()
+
+        val landingsPerHour = prevLandingQueue.size / (prevLandingQueue.last() - prevLandingQueue.first()) * 3600
+
+        println("Landings per hour: $landingsPerHour")
+    }
+
     /** Set the acceleration for landing aircraft */
     private fun updateLandingAcceleration() {
         val landingAcc = landingAccFamilyEntities.getEntities()
@@ -192,6 +209,7 @@ class AISystem: EntitySystem() {
                             it.trafficValue = MathUtils.clamp(it.trafficValue + points, 4f, MAX_ARRIVALS.toFloat())
                         }
                         it.incrementScoreBy(1, FlightType.ARRIVAL)
+                        updateArrivalStatistics()
                         get(ArrivalAirport.mapper)?.arptId?.also { landingArptId ->
                             val arptEntity = it.airports[landingArptId]?.entity ?: return@also
                             val depInfo = arptEntity[DepartureInfo.mapper] ?: return@also

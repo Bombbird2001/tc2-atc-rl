@@ -213,3 +213,4 @@ const val DISCORD_UPDATE_INTERVAL_S = 10f
 /** Training options */
 const val LOC_CAP_CHECK = false
 const val LOC_CAP_IAS_CHECK = false
+const val MAX_AIRCRAFT = 1

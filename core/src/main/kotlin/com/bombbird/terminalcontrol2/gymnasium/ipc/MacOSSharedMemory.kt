@@ -63,6 +63,12 @@ class MacOSSharedMemory(envId: String, fileSizeBytes: Long): SharedMemoryIPC {
         buffer.put(offset, byte)
     }
 
+    override fun copyByteArray(offset: Int, source: ByteBuffer) {
+        source.position(0)
+        buffer.position(offset)
+        buffer.put(source)
+    }
+
     override fun setFloat(offset: Int, float: Float) {
         buffer.putFloat(offset, float)
     }

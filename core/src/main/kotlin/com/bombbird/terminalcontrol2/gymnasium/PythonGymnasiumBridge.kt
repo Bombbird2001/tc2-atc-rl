@@ -16,6 +16,7 @@ import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_CHECK
 import com.bombbird.terminalcontrol2.global.MAG_HDG_DEV
+import com.bombbird.terminalcontrol2.global.MAX_AIRCRAFT
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPCFactory
 import com.bombbird.terminalcontrol2.navigation.Approach
@@ -35,11 +36,13 @@ import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.math.plusAssign
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.abs
 
 class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     companion object {
-        const val SHM_FILE_SIZE = 52
+        const val SHM_FILE_SIZE = 12 + MAX_AIRCRAFT * 44
 
         const val FRAMES_PER_ACTION = 10 * 30
 
@@ -163,8 +166,8 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     }
 
     private fun writeState(aircraft: GdxArrayMap<String, Aircraft>): Boolean {
-        if (aircraft.size != 1) {
-            throw IllegalArgumentException("$envName Aircraft must have exactly 1 item, got ${aircraft.size} instead")
+        if (aircraft.size > MAX_AIRCRAFT) {
+            throw IllegalArgumentException("$envName Aircraft must have <= $MAX_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
         val targetAircraft = aircraft.getValueAt(0).entity
@@ -210,23 +213,27 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         // Aircraft x, y, alt, gs, track
         val groundTrack = targetAircraft[GroundTrack.mapper]!!
         val currHdg = modulateHeading(convertWorldAndRenderDeg(groundTrack.trackVectorPxps.angleDeg()))
-        sharedMemoryIPC.setFloat(12, pos.x)
-        sharedMemoryIPC.setFloat(16, pos.y)
-        sharedMemoryIPC.setFloat(20, alt.altitudeFt)
-        sharedMemoryIPC.setFloat(24, groundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
-        sharedMemoryIPC.setFloat(28, currHdg)
-        sharedMemoryIPC.setFloat(32, spd.angularSpdDps)
-        sharedMemoryIPC.setFloat(36, spd.vertSpdFpm)
-        sharedMemoryIPC.setInt(40, prevClearance.clearedAlt)
-        sharedMemoryIPC.setInt(44, prevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
-        sharedMemoryIPC.setInt(48, prevClearance.clearedIas.toInt())
+        val stateArray = ByteBuffer.allocate(MAX_AIRCRAFT * 44).order(ByteOrder.nativeOrder())
+        stateArray.putFloat(pos.x)
+        stateArray.putFloat(pos.y)
+        stateArray.putFloat(alt.altitudeFt)
+        stateArray.putFloat(groundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
+        stateArray.putFloat(currHdg)
+        stateArray.putFloat(spd.angularSpdDps)
+        stateArray.putFloat(spd.vertSpdFpm)
+        stateArray.putInt(prevClearance.clearedAlt)
+        stateArray.putInt(prevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
+        stateArray.putInt(prevClearance.clearedIas.toInt())
+        stateArray.put(1)
+        stateArray.position(stateArray.position() + 3) // 3 padding bytes
+        sharedMemoryIPC.copyByteArray(12, stateArray)
 
         return shouldTerminate == 1.byte
     }
 
     private fun performAction(aircraft: GdxArrayMap<String, Aircraft>) {
-        if (aircraft.size != 1) {
-            throw IllegalArgumentException("$envName Aircraft must have exactly 1 item, got ${aircraft.size} instead")
+        if (aircraft.size > MAX_AIRCRAFT) {
+            throw IllegalArgumentException("$envName Aircraft must have <= $MAX_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
         val targetAircraft = aircraft.getValueAt(0).entity

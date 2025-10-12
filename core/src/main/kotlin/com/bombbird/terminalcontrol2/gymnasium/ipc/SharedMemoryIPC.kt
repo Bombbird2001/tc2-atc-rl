@@ -1,5 +1,7 @@
 package com.bombbird.terminalcontrol2.gymnasium.ipc
 
+import java.nio.ByteBuffer
+
 interface SharedMemoryIPC {
     companion object {
         const val SHM_FILE_PREFIX = "ATCRLSharedMem"
@@ -27,6 +29,8 @@ interface SharedMemoryIPC {
     fun signalActionReady(): Boolean
 
     fun setByte(offset: Int, byte: Byte)
+
+    fun copyByteArray(offset: Int, source: ByteBuffer)
 
     fun setFloat(offset: Int, float: Float)
 

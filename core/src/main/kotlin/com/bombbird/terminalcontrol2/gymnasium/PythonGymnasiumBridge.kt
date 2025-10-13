@@ -102,6 +102,8 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         if (sharedMemoryIPC.needsResetSim()) {
 //            FileLog.info("$envName PythonGymnasiumBridge", "Resetting state")
             resetNeeded = false
+
+            /*
             var needsNewLocation = true
             while (needsNewLocation) {
                 val newAircraft = resetAircraft()
@@ -110,6 +112,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             val newAc = aircraft.getValueAt(0).entity
             prevLocDistPx = distPxFromLoc(newAc[Position.mapper]!!, targetApproach.value)
             prevAltFt = newAc[Altitude.mapper]!!.altitudeFt
+            */
+            writeState(aircraft)
+
             terminating = false
             sharedMemoryIPC.signalActionReady()
 //            println("${System.currentTimeMillis()} Reset action ready")
@@ -170,11 +175,12 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             throw IllegalArgumentException("$envName Aircraft must have <= $MAX_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
-        val targetAircraft = aircraft.getValueAt(0).entity
+//        val targetAircraft = aircraft.getValueAt(0).entity
 
         // Proceed flag
         sharedMemoryIPC.setByte(0, 1)
 
+        /*
         // Reward from previous action
         // Constant -0.01 per time step + decrease in distance towards LOC line segment +
         // lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
@@ -202,6 +208,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             reward -= 2
             shouldTerminate = 1
         }
+         */
+        val reward = 0f
+        val shouldTerminate = 0.byte
         sharedMemoryIPC.setFloat(4, reward)
 
         // Simulation terminated (LOC captured / conflict encountered)
@@ -242,7 +251,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             throw IllegalArgumentException("$envName Aircraft must have <= $MAX_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
-        val targetAircraft = aircraft.getValueAt(0).entity
+//        val targetAircraft = aircraft.getValueAt(0).entity
 
         val bytes = sharedMemoryIPC.readBytes(0, 4)
         val proceedFlag = bytes[0]
@@ -250,24 +259,24 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         sharedMemoryIPC.setByte(0, 0) // Reset proceed flag
 //        println("${System.currentTimeMillis()} Proceed unset")
 
-        val clearedHdg = (sharedMemoryIPC.readShort(8) * HDG_ACTION_MULTIPLIER).toShort()
-        val clearedAlt = bytes[2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
-        val clearedIas = (bytes[3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
+//        val clearedHdg = (sharedMemoryIPC.readShort(8) * HDG_ACTION_MULTIPLIER).toShort()
+//        val clearedAlt = bytes[2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
+//        val clearedIas = (bytes[3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
 
-        val currHdg = convertWorldAndRenderDeg(targetAircraft[Direction.mapper]!!.trackUnitVector.angleDeg()) + MAG_HDG_DEV
+//        val currHdg = convertWorldAndRenderDeg(targetAircraft[Direction.mapper]!!.trackUnitVector.angleDeg()) + MAG_HDG_DEV
 //        val currAlt = targetAircraft[Altitude.mapper]!!.altitudeFt
 
-        val prevClearance = getLatestClearanceState(targetAircraft)!!
-        clearancesChangePenalty = (
+//        val prevClearance = getLatestClearanceState(targetAircraft)!!
+//        clearancesChangePenalty = (
 //            ((prevClearance.vectorHdg?.let {
 //                (findDeltaHeading(it.toFloat(), clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT) > 2).toInt() * 0.15f
 //            }) ?: 0f) +
-            (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.025f +
-            (clearedAlt != prevClearance.clearedAlt).toInt() * 0.025f +
-            (clearedIas != prevClearance.clearedIas).toInt() * 0.025f
-        )
-        val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
-        addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
+//            (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.025f +
+//            (clearedAlt != prevClearance.clearedAlt).toInt() * 0.025f +
+//            (clearedIas != prevClearance.clearedIas).toInt() * 0.025f
+//        )
+//        val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
+//        addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
     }
 }
 

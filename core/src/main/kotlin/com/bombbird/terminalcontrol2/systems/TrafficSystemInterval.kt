@@ -9,6 +9,7 @@ import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
 import com.bombbird.terminalcontrol2.global.GAME
+import com.bombbird.terminalcontrol2.global.MAX_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.THUNDERSTORM_TAKEOFF_PROTECTION_DIST_NM
 import com.bombbird.terminalcontrol2.traffic.*
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
@@ -62,7 +63,6 @@ class TrafficSystemInterval: IntervalSystem(1f) {
      */
     override fun updateInterval() {
         GAME.gameServer?.apply {
-            /*
             val airportArrivalStats = arrivalStatsFamilyEntities.getEntities()
             trafficMode = TrafficMode.ARRIVALS_TO_CONTROL
             when (trafficMode) {
@@ -81,11 +81,12 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.targetTrafficValue = 1
+                        arptArrStats.targetTrafficValue = MAX_AIRCRAFT
                         arptArrStats.arrivalSpawnTimer -= interval
                         if (arptArrStats.arrivalSpawnTimer > 0) continue
 
                         val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: continue
+                        if (arptId != 0.byte) continue
                         val arrivalCount = arrivalFamilyEntities.getEntities().filter {
                             it[FlightType.mapper]?.type == FlightType.ARRIVAL && it[ArrivalAirport.mapper]?.arptId == arptId
                         }.size
@@ -116,7 +117,6 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 }
                 else -> FileLog.warn("TrafficSystem", "Invalid traffic mode $trafficMode")
             }
-             */
 
             // I Am God achievement counter; engine update rate already takes into account game speed up
             if (trafficMode == TrafficMode.FLOW_RATE && trafficValue >= 119.9f && playersInGame == 1.toByte())

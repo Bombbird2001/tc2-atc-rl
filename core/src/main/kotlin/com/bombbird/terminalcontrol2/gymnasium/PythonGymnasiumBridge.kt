@@ -179,10 +179,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         // Constant -0.01 per time step + decrease in distance towards LOC line segment +
         // lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
         val newLocDistPx = distPxFromLoc(targetAircraft[Position.mapper]!!, targetApproach.value)
-        val pos = targetAircraft[Position.mapper]!!
         val alt = targetAircraft[Altitude.mapper]!!
-        val spd = targetAircraft[Speed.mapper]!!
-        val prevClearance = getLatestClearanceState(targetAircraft)!!
         val distReward = (prevLocDistPx - newLocDistPx) / 1600
         val altReward = (prevAltFt - alt.altitudeFt) / 12000
         var reward = distReward + altReward - 0.03f - clearancesChangePenalty
@@ -211,21 +208,30 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         sharedMemoryIPC.setByte(1, shouldTerminate)
 
         // Aircraft x, y, alt, gs, track
-        val groundTrack = targetAircraft[GroundTrack.mapper]!!
-        val currHdg = modulateHeading(convertWorldAndRenderDeg(groundTrack.trackVectorPxps.angleDeg()))
         val stateArray = ByteBuffer.allocate(MAX_AIRCRAFT * 44).order(ByteOrder.nativeOrder())
-        stateArray.putFloat(pos.x)
-        stateArray.putFloat(pos.y)
-        stateArray.putFloat(alt.altitudeFt)
-        stateArray.putFloat(groundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
-        stateArray.putFloat(currHdg)
-        stateArray.putFloat(spd.angularSpdDps)
-        stateArray.putFloat(spd.vertSpdFpm)
-        stateArray.putInt(prevClearance.clearedAlt)
-        stateArray.putInt(prevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
-        stateArray.putInt(prevClearance.clearedIas.toInt())
-        stateArray.put(1)
-        stateArray.position(stateArray.position() + 3) // 3 padding bytes
+        for (i in 0 until aircraft.size) {
+            // Only loop to aircraft size; unused slots default to 0 already during allocate which sets "present" byte to 0
+            val currAircraft = aircraft.getValueAt(i).entity
+            val currPos = currAircraft[Position.mapper]!!
+            val currAlt = currAircraft[Altitude.mapper]!!
+            val currSpd = currAircraft[Speed.mapper]!!
+            val currGroundTrack = currAircraft[GroundTrack.mapper]!!
+            val currHdg = modulateHeading(convertWorldAndRenderDeg(currGroundTrack.trackVectorPxps.angleDeg()))
+            val currPrevClearance = getLatestClearanceState(currAircraft)!!
+
+            stateArray.putFloat(currPos.x)
+            stateArray.putFloat(currPos.y)
+            stateArray.putFloat(currAlt.altitudeFt)
+            stateArray.putFloat(currGroundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
+            stateArray.putFloat(currHdg)
+            stateArray.putFloat(currSpd.angularSpdDps)
+            stateArray.putFloat(currSpd.vertSpdFpm)
+            stateArray.putInt(currPrevClearance.clearedAlt)
+            stateArray.putInt(currPrevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
+            stateArray.putInt(currPrevClearance.clearedIas.toInt())
+            stateArray.put(1)
+            stateArray.position(stateArray.position() + 3) // 3 padding bytes
+        }
         sharedMemoryIPC.copyByteArray(12, stateArray)
 
         return shouldTerminate == 1.byte

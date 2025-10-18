@@ -729,15 +729,11 @@ class GameServer private constructor(
 
         pythonGymBridge.update(aircraft) {
             // Reset function - despawn current aircraft, create new aircraft
-            for (i in 0 until aircraft.size) {
+            for (i in aircraft.size - 1 downTo 0) {
                 val ac = aircraft.getValueAt(i)
                 despawnAircraft(ac.entity)
             }
             aircraft.clear()
-
-            val airport = airports[0].entity
-            createArrival("SHIBA1", "B77W", airport, this)
-//            FileLog.info("$envName GameServer", "${aircraft.size} aircraft")
 
             return@update aircraft
         }

@@ -95,7 +95,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                         arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
                         if (arrivalCount >= arptArrStats.targetTrafficValue) continue
                         createRandomArrivalForAirport(arptEntity, this)
-                        FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")
+//                        FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")
                     }
                 }
                 TrafficMode.FLOW_RATE -> {

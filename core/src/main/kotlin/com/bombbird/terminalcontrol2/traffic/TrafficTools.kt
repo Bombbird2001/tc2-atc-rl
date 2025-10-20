@@ -141,6 +141,9 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         val app = airport[ApproachChildren.mapper]?.approachMap?.get("ILS 02L")?.entity!!
         entity += LocalizerArmed(app)
         entity += GlideSlopeArmed(app)
+        entity += AppDecelerateTo190kts()
+        entity += DecelerateToAppSpd()
+        entity += ContactToTower(1500)
         entity[CommandTarget.mapper]?.apply {
             targetAltFt = cmdTargetAlt
             targetIasKt = ias

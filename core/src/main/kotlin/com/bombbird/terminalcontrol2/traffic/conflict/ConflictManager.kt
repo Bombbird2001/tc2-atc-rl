@@ -3,6 +3,7 @@ package com.bombbird.terminalcontrol2.traffic.conflict
 import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.MathUtils
+import com.bombbird.terminalcontrol2.ai.holdanddispatch.HoldAndDispatch
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.ThunderStorm
 import com.bombbird.terminalcontrol2.global.*
@@ -97,17 +98,40 @@ class ConflictManager {
             // For every new conflict (excluding wake conflicts), subtract 5% of score
             val currScore = score
             val newConflicts = getCurrentNonWakeConflicts() - prevConflictNoWakeCount
-            if (newConflicts > 0) score = floor(score * 0.95f.pow(newConflicts)).roundToInt()
+            if (newConflicts > 0) {
+                score = floor(score * 0.95f.pow(newConflicts)).roundToInt()
+                logConflicts()
+            }
             // When the 3s timer is up, subtract 1 from score for every conflict
             timer--
             if (timer <= 0) {
                 score -= conflicts.size
                 timer += PENALTY_DURATION_S
+                logConflicts()
             }
             // Score cannot go below 0
             if (score < 0) score = 0
             if (score != currScore) sendScoreUpdate()
         }
+    }
+
+    private fun logConflicts() {
+        var wakeCount = 0f
+        var normalCount = 0f
+        var mvaCount = 0f
+
+        for (conflict in conflicts) {
+            when (conflict.reason) {
+                Conflict.WAKE_INFRINGE -> wakeCount++
+                Conflict.NORMAL_CONFLICT -> normalCount++
+                Conflict.RESTRICTED, Conflict.MVA -> mvaCount++
+                else -> FileLog.warn("ConflictManager", "Unknown conflict: $conflict")
+            }
+        }
+
+        CsvTools.writeToWakeConflict(HoldAndDispatch.timePassed, wakeCount)
+        CsvTools.writeToConflict(HoldAndDispatch.timePassed, normalCount)
+        CsvTools.writeToMvaConflict(HoldAndDispatch.timePassed, mvaCount)
     }
 
     /**

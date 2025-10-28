@@ -7,6 +7,7 @@ import com.badlogic.gdx.math.Intersector
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.Queue
+import com.bombbird.terminalcontrol2.ai.holdanddispatch.HoldAndDispatch
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.global.*
 import com.bombbird.terminalcontrol2.navigation.*
@@ -179,7 +180,7 @@ class AISystem: EntitySystem() {
 
         val landingsPerHour = prevLandingQueue.size / (prevLandingQueue.last() - prevLandingQueue.first()) * 3600
 
-        CsvTools.writeToCsv("arrival_rate.csv", listOf("Time (s)", "Arrival rate (last 30 aircraft)"), listOf(timePassed, landingsPerHour))
+        CsvTools.writeToArrivalRate(HoldAndDispatch.timePassed, landingsPerHour)
     }
 
     /** Set the acceleration for landing aircraft */

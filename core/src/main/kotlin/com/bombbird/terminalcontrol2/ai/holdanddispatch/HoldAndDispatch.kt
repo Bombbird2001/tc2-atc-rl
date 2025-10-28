@@ -44,6 +44,10 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 class HoldAndDispatch(private val gs: GameServer) {
+    companion object {
+        var timePassed = 0f
+    }
+
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
     private val distNmFromFAF = 10
     private val offsetAngle = 30
@@ -62,7 +66,6 @@ class HoldAndDispatch(private val gs: GameServer) {
     private val acStates: GdxArrayMap<String, AIState> = GdxArrayMap()
     private val assignedStack: GdxArrayMap<String, HoldStack> = GdxArrayMap()
 
-    private var timePassed = 0f
     private var holdingTimeQueue = Queue<Float>()
 
     fun init() {
@@ -82,6 +85,8 @@ class HoldAndDispatch(private val gs: GameServer) {
             targetLocPoint.y - MathUtils.cosDeg(targetAppTrack - offsetAngle) * distPx,
             5000, 353, 5, CommandTarget.TURN_RIGHT, "ILS-02L-RIGHT-HOLD", holdAltInterval
         ))
+
+        CsvTools.clearAllMetricLogFiles()
     }
 
     fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float) {
@@ -243,11 +248,12 @@ class HoldAndDispatch(private val gs: GameServer) {
 
         val holdingTime = holdingTimeQueue.average().toFloat()
 
-        CsvTools.writeToCsv("holding_time.csv", listOf("Time (s)", "Holding time (last 30 aircraft)"), listOf(timePassed, holdingTime))
+        CsvTools.writeToAverageHoldingTime(timePassed, holdingTime)
+        CsvTools.writeToIndividualHoldTime(holdingTime)
     }
 
     private fun updateHoldingCountStatistics(newHoldCount: Int) {
-        CsvTools.writeToCsv("holding_count.csv", listOf("Time (s)", "Aircraft in hold"), listOf(timePassed, newHoldCount.toFloat()))
+        CsvTools.writeToHoldingCount(timePassed, newHoldCount.toFloat())
     }
 
     fun calculateDistanceToPointWithTurn(posX: Float, posY: Float, destX: Float, destY: Float, dir: Vector2, maxTurnRateDegPerS: Float, gsPxps: Float): Float {

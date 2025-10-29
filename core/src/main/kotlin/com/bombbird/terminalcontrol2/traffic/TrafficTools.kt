@@ -98,6 +98,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
     val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
     val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
+//    val spawnTrack = MathUtils.random(360f)
 //    val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
 //    val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
     val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)

@@ -57,6 +57,14 @@ abstract class MCTSNode(val acStates: Array<MCTSAircraftState>) {
         return timesVisited == 0
     }
 
+    fun selectBestAction(): Int {
+        return childNodes.indices.maxBy { action -> childNodes[action]?.getExpectedReward() ?: Float.NEGATIVE_INFINITY }
+    }
+
+    fun getNodeForAction(action: Int): MCTSNode? {
+        return childNodes[action]
+    }
+
     override fun toString(): String {
         return javaClass.simpleName
     }

@@ -12,5 +12,5 @@ fun main(args: Array<String>) {
             0f, 0f, 7000, 280, 240, false)
     ), false, Float.MAX_VALUE)
     val mcts = MCTS(rootNode)
-    mcts.searchAction(10000)
+    mcts.searchAction(1000)
 }

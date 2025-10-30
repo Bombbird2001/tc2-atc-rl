@@ -19,7 +19,18 @@ class MCTS(val root: AircraftSelectNode) {
         println("Max depth: $maxDepth")
         println("Expected reward: ${root.getExpectedReward()}")
 
-        TODO("Select action chain of length 4 that terminates with highest expected rewards")
+        // Select action chain of length 4 that terminates with highest expected rewards
+        var currNode: MCTSNode = root
+        val actions = Array(4) { -1 }
+        for (i in 0 until 4) {
+            val bestAction = currNode.selectBestAction()
+            currNode = currNode.getNodeForAction(bestAction) ?: break
+            actions[i] = bestAction
+        }
+
+        println(actions.joinToString(" "))
+
+        return actions
     }
 
     fun searchReward(node: MCTSNode, depth: Int): Float {

@@ -101,10 +101,14 @@ class ManualAltitudeSelectPolicyPrior: AltitudeSelectPolicyPrior() {
         selectedAircraft: Int,
         selectedHeading: Int
     ): Array<Float> {
-        // TODO Higher probability for lower altitude
+        // Higher probability for lower altitude
         // Base probability of 1 at FL150, then linear increase to 3 as
         // altitude decreases to 3000 feet, then stays at 3 for 2000 feet
-        return 1f / MCTSNode.ALTITUDE_SELECT_ACTIONS
+        val unnormalized = (0 until 14).map {
+            MathUtils.clamp(3f + 1f / 6 - it / 6, 1f, 3f)
+        }
+
+        return getNormalizedDistribution(unnormalized)
     }
 }
 
@@ -124,9 +128,13 @@ class ManualSpeedSelectPolicyPrior: SpeedSelectPolicyPrior() {
         selectedHeading: Int,
         selectedAltitude: Int,
     ): Array<Float> {
-        // TODO Higher probability for higher speeds
+        // Higher probability for higher speeds
         // Base probability of 1 at 160 knots, then linear increase to 2
         // as speed increases to 220 knots, then stays at 2 till 250 knots
-        return 1f / MCTSNode.SPEED_SELECT_ACTIONS
+        val unnormalized = (0 until 10).map {
+            MathUtils.clamp(1f + it / 6f, 1f, 2f)
+        }
+
+        return getNormalizedDistribution(unnormalized)
     }
 }

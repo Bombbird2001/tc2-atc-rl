@@ -217,3 +217,5 @@ const val MAX_AIRCRAFT = 10
 const val CONFLICT_PENALTY = 8
 const val PER_STEP_PENALTY = 0.03f
 const val LOC_CAP_REWARD = 4
+const val MAX_SPAWN_DIST_NM = 60
+const val MIN_SPAWN_DIST_NM = 5

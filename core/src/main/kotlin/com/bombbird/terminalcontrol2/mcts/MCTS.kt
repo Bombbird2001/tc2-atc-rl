@@ -10,12 +10,14 @@ class MCTS(val root: AircraftSelectNode) {
     }
 
     private var maxDepth = 0
+    private var nodeVisitCount = 0
 
     fun searchAction(timeLimitMs: Long): Array<Int> {
         val startTime = System.currentTimeMillis()
         while (System.currentTimeMillis() - startTime < timeLimitMs) {
             searchReward(root, 0)
         }
+        println("Visited nodes $nodeVisitCount times")
         println("Max depth: $maxDepth")
         println("Expected reward: ${root.getExpectedReward()}")
 
@@ -35,6 +37,7 @@ class MCTS(val root: AircraftSelectNode) {
 
     fun searchReward(node: MCTSNode, depth: Int): Float {
         maxDepth = max(maxDepth, depth)
+        nodeVisitCount++
         if (depth >= SEARCH_DEPTH_MAX) return -1f
 
         if (node.isTerminal()) return node.getTerminalReward()

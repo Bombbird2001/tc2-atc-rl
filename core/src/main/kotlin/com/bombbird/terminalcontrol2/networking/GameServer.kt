@@ -735,6 +735,9 @@ class GameServer private constructor(
             }
             aircraft.clear()
 
+            // Force spawn 1 aircraft on start
+            createRandomArrivalForAirport(airports.getValueAt(0).entity, this)
+
             return@update aircraft
         }
     }

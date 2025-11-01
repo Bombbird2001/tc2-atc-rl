@@ -14,6 +14,7 @@ import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
+import com.bombbird.terminalcontrol2.global.CHECK_CONFLICT
 import com.bombbird.terminalcontrol2.global.CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_REWARD
@@ -51,7 +52,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
         const val FRAMES_PER_ACTION = 10 * 30
 
-        const val HDG_ACTION_MULTIPLIER = 1
+        const val HDG_ACTION_MULTIPLIER = 5
         const val ALT_ACTION_MULTIPLIER = 1000
         const val ALT_ACTION_ADDER = 2000
         const val SPD_ACTION_MULTIPLIER = 10
@@ -89,9 +90,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     var targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
     }
-    var clearancesChangePenalty = 0f
+//    var clearancesChangePenalty = 0f
 
-//    val conflictManager = ConflictManager()
+    val conflictManager = ConflictManager()
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
@@ -179,15 +180,17 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         var reward = 0f
         var shouldTerminate = 0.byte
 
-        // Conflict check
-//        val conflicts = conflictManager.getConflictCountRL(ImmutableArray(aircraft.values().map { it.entity }.toGdxArray()))
-//        if (conflicts > 0) {
-//            reward -= CONFLICT_PENALTY
-//            shouldTerminate = 1
-//        }
+        if (CHECK_CONFLICT) {
+            // Conflict check
+            val conflicts = conflictManager.getConflictCountRL(ImmutableArray(aircraft.values().map { it.entity }.toGdxArray()))
+            if (conflicts > 0) {
+                reward -= CONFLICT_PENALTY
+                shouldTerminate = 1
+            }
+        }
 
         // Clearance change penalty from previous clearance
-        reward -= clearancesChangePenalty
+//        reward -= clearancesChangePenalty
 
         // Simulation terminated (conflict encountered)
         sharedMemoryIPC.setByte(1, shouldTerminate)
@@ -287,28 +290,28 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 //        println("Selected aircraft: $acIndex; aircraft count: ${aircraft.size}")
 //        println("Issue instruction: $issueInstruction, clearedHdg: $clearedHdg, clearedAlt: $clearedAlt, clearedIas: $clearedIas")
 
-        clearancesChangePenalty = 0f
+//        clearancesChangePenalty = 0f
         if (issueInstruction) {
             if (acIndex < aircraft.size) {
                 val targetAircraft = aircraft.getValueAt(acIndex).entity
 
-                val currHdg = convertWorldAndRenderDeg(targetAircraft[Direction.mapper]!!.trackUnitVector.angleDeg()) + MAG_HDG_DEV
+//                val currHdg = convertWorldAndRenderDeg(targetAircraft[Direction.mapper]!!.trackUnitVector.angleDeg()) + MAG_HDG_DEV
 //                val currAlt = targetAircraft[Altitude.mapper]!!.altitudeFt
 
                 val prevClearance = getLatestClearanceState(targetAircraft)!!
-                clearancesChangePenalty = (
-                        0.025f +
+//                clearancesChangePenalty = (
+//                        0.025f +
 //                    ((prevClearance.vectorHdg?.let {
 //                        (findDeltaHeading(it.toFloat(), clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT) > 2).toInt() * 0.15f
 //                    }) ?: 0f) +
-                        (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.025f +
-                        (clearedAlt != prevClearance.clearedAlt).toInt() * 0.025f +
-                        (clearedIas != prevClearance.clearedIas).toInt() * 0.025f
-                )
+//                        (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.025f +
+//                        (clearedAlt != prevClearance.clearedAlt).toInt() * 0.025f +
+//                        (clearedIas != prevClearance.clearedIas).toInt() * 0.025f
+//                )
                 val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
                 addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
-            } else {
-                clearancesChangePenalty = 0.01f
+//            } else {
+//                clearancesChangePenalty = 0.01f
             }
         }
     }

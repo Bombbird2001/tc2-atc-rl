@@ -214,6 +214,7 @@ const val DISCORD_UPDATE_INTERVAL_S = 10f
 const val LOC_CAP_CHECK = true
 const val LOC_CAP_IAS_CHECK = false
 const val MAX_AIRCRAFT = 10
+const val CHECK_CONFLICT = false
 const val CONFLICT_PENALTY = 8
 const val PER_STEP_PENALTY = 0.03f
 const val LOC_CAP_REWARD = 4

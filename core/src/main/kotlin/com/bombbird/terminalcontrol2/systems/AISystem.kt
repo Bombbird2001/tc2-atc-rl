@@ -617,9 +617,9 @@ class AISystem: EntitySystem() {
                     }
                 }
 
-                // Additional intercept angle check - max 60 degrees offset
+                // Additional intercept angle check - max 80 degrees offset
                 val angleDiff = findDeltaHeading(convertWorldAndRenderDeg(dir.trackUnitVector.angleDeg()),locCourseHdg, CommandTarget.TURN_DEFAULT)
-                if (abs(angleDiff) > 60) {
+                if (abs(angleDiff) > 80) {
                     return@apply
                 }
 

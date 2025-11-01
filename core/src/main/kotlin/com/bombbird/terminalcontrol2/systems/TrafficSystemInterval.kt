@@ -83,7 +83,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
                         arptArrStats.targetTrafficValue = MAX_AIRCRAFT
                         arptArrStats.arrivalSpawnTimer -= interval
-//                        if (arptArrStats.arrivalSpawnTimer > 0) continue
+                        if (arptArrStats.arrivalSpawnTimer > 0) continue
 
                         val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: continue
                         if (arptId != 0.byte) continue

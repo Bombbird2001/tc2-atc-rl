@@ -4,12 +4,12 @@ import java.nio.ByteBuffer
 
 interface SharedMemoryIPC {
     companion object {
-        const val SHM_FILE_PREFIX = "ATCRLSharedMem"
-        const val TRAINER_INITIALIZED = "ATCRLTrainerInit"
-        const val RESET_PREFIX = "ATCRLResetEvent"
-        const val ACTION_READY_PREFIX = "ATCRLActionReadyEvent"
-        const val ACTION_DONE_PREFIX = "ATCRLActionDoneEvent"
-        const val RESET_AFTER_STEP_PREFIX = "ATCRLResetAfterEvent"
+        const val SHM_FILE_PREFIX = "ATCSharedMem"
+        const val TRAINER_INITIALIZED = "ATCTrainerInit"
+        const val RESET_PREFIX = "ATCResetEvent"
+        const val ACTION_READY_PREFIX = "ATCActionReadyEvent"
+        const val ACTION_DONE_PREFIX = "ATCActionDoneEvent"
+        const val RESET_AFTER_STEP_PREFIX = "ATCResetAfterEvent"
     }
 
     fun waitForTrainerInitialized()

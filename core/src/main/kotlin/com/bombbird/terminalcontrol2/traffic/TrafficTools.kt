@@ -88,28 +88,37 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val randomStar = randomStar(airport)
     val starRoute = randomStar?.getRandomSTARRouteForRunway() ?: Route()
     val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
-    val spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
-//    val spawnDir = MathUtils.random(360f)
+    val spawnPos: Triple<Float, Float, Float>
 
-    // f(r) should be proportional to r (r is spawn distance from center)
-    // F(r) = r^2 / (maxDist^2 - minDist^2) <=> r = sqrt((maxDist^2 - minDist^2) * F(r) + minDist^2) where F(r) ~ U[0,1] (Thank you ST4231)
-//    val scale = MAX_SPAWN_DIST_NM * MAX_SPAWN_DIST_NM - MIN_SPAWN_DIST_NM * MIN_SPAWN_DIST_NM
-//    val distNm = sqrt(scale * MathUtils.random() + MIN_SPAWN_DIST_NM * MIN_SPAWN_DIST_NM)
+    if (RANDOM_SPAWN_LOCATION) {
+        val spawnDir = MathUtils.random(360f)
 
-//    val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
-//    val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
-//    val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
-//    val spawnTrack = MathUtils.random(360f)
-//    val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-//    val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-//    val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)
-//    val offsetY = -MathUtils.cosDeg(23f) * nmToPx(12.5f)
-//    val spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
+        // f(r) should be proportional to r (r is spawn distance from center)
+        // F(r) = r^2 / (maxDist^2 - minDist^2) <=> r = sqrt((maxDist^2 - minDist^2) * F(r) + minDist^2) where F(r) ~ U[0,1] (Thank you ST4231)
+        val scale = MAX_SPAWN_DIST_NM * MAX_SPAWN_DIST_NM - MIN_SPAWN_DIST_NM * MIN_SPAWN_DIST_NM
+        val distNm = sqrt(scale * MathUtils.random() + MIN_SPAWN_DIST_NM * MIN_SPAWN_DIST_NM)
+
+        val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
+        val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
+        val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
+//        val spawnTrack = MathUtils.random(360f)
+//        val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
+//        val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
+        val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)
+        val offsetY = -MathUtils.cosDeg(23f) * nmToPx(12.5f)
+        spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
+    } else {
+        spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
+    }
 
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
         entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
 //        entity += ArrivalRouteZone().apply { starZone.addAll(getZonesForArrivalRoute(origStarRoute)) }
-        var alt = calculateArrivalSpawnAltitude(entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
+        var alt = if (RANDOM_SPAWN_LOCATION) {
+            calculateArrivalSpawnAltitude(entity, airport, Route(), spawnPos.first, spawnPos.second, Route())
+        } else {
+            calculateArrivalSpawnAltitude(entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
+        }
 //        var alt = MathUtils.random(3000f, MAX_ALT.toFloat())
         alt = amendAltForNearbyTraffic(alt, spawnPos.first, spawnPos.second, entity)
         entity[Altitude.mapper]?.altitudeFt = alt

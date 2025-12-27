@@ -707,8 +707,8 @@ class GameServer private constructor(
 
             prevMs = currMs
 
-            if (slowMode) for (i in 0..2000000000) {}
-//            if (slowMode) Thread.sleep(1)
+//            if (slowMode) for (i in 0..2000000000) {}
+            if (slowMode) Thread.sleep(1)
 
 //            if (currMs % 100 == 0L) println("FPS: ${frameCount * 1000 / frametimeSum}")
         }

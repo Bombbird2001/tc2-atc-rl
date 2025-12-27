@@ -47,16 +47,17 @@ import kotlin.math.abs
 
 class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     companion object {
-        const val SIZE_PER_AIRCRAFT = 44
-        const val SHM_FILE_SIZE = 12 + MAX_AIRCRAFT * SIZE_PER_AIRCRAFT
+        const val CONSTANT_SIZE = 8
+        const val SIZE_PER_AIRCRAFT = 48
+        const val SIZE_PER_INSTRUCTION = 6
+        const val ADDITIONAL_PADDING = 2
+        const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_AIRCRAFT * SIZE_PER_AIRCRAFT
 
         const val FRAMES_PER_ACTION = 10 * 30
 
         const val HDG_ACTION_MULTIPLIER = 5
         const val ALT_ACTION_MULTIPLIER = 1000
-        const val ALT_ACTION_ADDER = 2000
         const val SPD_ACTION_MULTIPLIER = 10
-        const val SPD_ACTION_ADDER = 160
 
         const val LOOP_EXIT_MS = 15000
 
@@ -211,10 +212,14 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             val currPrevClearance = getLatestClearanceState(currAircraft)!!
             val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper)) 1.byte else 0.byte
 
+            // ICAO type, x, y, alt, ias, track, track rate, vertical speed, cleared alt, cleared hdg, cleared IAS, LOC cap, mask
+            for (c in currAcInfo.icaoType) {
+                stateArray.put(c.code.toByte())
+            }
             stateArray.putFloat(currPos.x)
             stateArray.putFloat(currPos.y)
             stateArray.putFloat(currAlt.altitudeFt)
-            stateArray.putFloat(currGroundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
+            stateArray.putFloat(currSpd.speedKts)
             stateArray.putFloat(currHdg)
             stateArray.putFloat(currSpd.angularSpdDps)
             stateArray.putFloat(currSpd.vertSpdFpm)
@@ -259,11 +264,11 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             // Discourage aircraft from loitering too long close to LOC
 //            if (newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) totalAcReward -= 0.06f
         }
-        sharedMemoryIPC.copyByteArray(12, stateArray)
+        sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)
 
         reward += (if (relevantAircraftCount > 0) totalAcReward / relevantAircraftCount else 0f)
 
-        sharedMemoryIPC.setFloat(8, reward)
+        sharedMemoryIPC.setFloat(4, reward)
 
         return shouldTerminate == 1.byte
     }
@@ -275,43 +280,31 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
 //        val targetAircraft = aircraft.getValueAt(0).entity
 
-        val bytes = sharedMemoryIPC.readBytes(0, 8)
+        val bytes = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
         val proceedFlag = bytes[0]
         if (proceedFlag.toInt() != 1) throw IllegalStateException("$envName ProceedFlag must be 1")
         sharedMemoryIPC.setByte(0, 0) // Reset proceed flag
 //        println("${System.currentTimeMillis()} Proceed unset")
 
-        val issueInstruction = bytes[3] == 1.byte
-        val acIndex = bytes[2].toInt()
-        val clearedHdg = (sharedMemoryIPC.readShort(4) * HDG_ACTION_MULTIPLIER).toShort()
-        val clearedAlt = bytes[6] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
-        val clearedIas = (bytes[7] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
-
 //        println("Selected aircraft: $acIndex; aircraft count: ${aircraft.size}")
 //        println("Issue instruction: $issueInstruction, clearedHdg: $clearedHdg, clearedAlt: $clearedAlt, clearedIas: $clearedIas")
 
 //        clearancesChangePenalty = 0f
-        if (issueInstruction) {
-            if (acIndex < aircraft.size) {
-                val targetAircraft = aircraft.getValueAt(acIndex).entity
 
-//                val currHdg = convertWorldAndRenderDeg(targetAircraft[Direction.mapper]!!.trackUnitVector.angleDeg()) + MAG_HDG_DEV
-//                val currAlt = targetAircraft[Altitude.mapper]!!.altitudeFt
+        for (i in 0 until aircraft.size) {
+            val instructionStartOffset = CONSTANT_SIZE + i * SIZE_PER_INSTRUCTION
+            if (bytes[instructionStartOffset + 4] != 1.byte) throw IllegalStateException("$envName Invalid instruction for aircraft at index $i")
+            val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()
+            val clearedAlt = bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER
+            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER).toShort()
 
-                val prevClearance = getLatestClearanceState(targetAircraft)!!
-//                clearancesChangePenalty = (
-//                        0.025f +
-//                    ((prevClearance.vectorHdg?.let {
-//                        (findDeltaHeading(it.toFloat(), clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT) > 2).toInt() * 0.15f
-//                    }) ?: 0f) +
-//                        (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.025f +
-//                        (clearedAlt != prevClearance.clearedAlt).toInt() * 0.025f +
-//                        (clearedIas != prevClearance.clearedIas).toInt() * 0.025f
-//                )
+            val targetAircraft = aircraft.getValueAt(i).entity
+            val prevClearance = getLatestClearanceState(targetAircraft)!!
+            val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas
+
+            if (changed) {
                 val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
                 addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
-//            } else {
-//                clearancesChangePenalty = 0.01f
             }
         }
     }

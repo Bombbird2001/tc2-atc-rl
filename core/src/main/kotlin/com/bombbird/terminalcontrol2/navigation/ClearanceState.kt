@@ -84,8 +84,8 @@ data class ClearanceState(var routePrimaryName: String = "", val route: Route = 
             route.let { currRoute -> newClearance.route.let { newRoute ->
                 val newFirstLeg = if (newRoute.size > 0) newRoute[0] else null
                 // Remove current present position hold leg if next leg is a different hold leg and is not an uninitialised leg, or not a hold leg
-                if (currFirstLeg is Route.HoldLeg && currFirstLeg.wptId < -1 && (newFirstLeg !is Route.HoldLeg || (newFirstLeg.wptId.toInt() != -1 && newFirstLeg.wptId != currFirstLeg.wptId)))
-                    removeCustomHoldWaypoint(currFirstLeg.wptId)
+//                if (currFirstLeg is Route.HoldLeg && currFirstLeg.wptId < -1 && (newFirstLeg !is Route.HoldLeg || (newFirstLeg.wptId.toInt() != -1 && newFirstLeg.wptId != currFirstLeg.wptId)))
+//                    removeCustomHoldWaypoint(currFirstLeg.wptId)
                 // Create new present hold waypoint if previous leg is not a present hold leg (wptId >= 0), and new leg is uninitialised
                 if ((currFirstLeg !is Route.HoldLeg || currFirstLeg.wptId >= 0) && (newFirstLeg as? Route.HoldLeg)?.wptId?.toInt() == -1)
                     entity[Position.mapper]?.apply {
@@ -270,6 +270,15 @@ data class ClearanceState(var routePrimaryName: String = "", val route: Route = 
             (route[i] as? Route.WaypointLeg)?.let {
                 it.altRestrActive = false
                 it.spdRestrActive = false
+            }
+        }
+    }
+
+    /** Inactivates any altitude and speed restrictions on the current route */
+    fun deactivateAllAltRestrictions() {
+        for (i in 0 until route.size) {
+            (route[i] as? Route.WaypointLeg)?.let {
+                it.altRestrActive = false
             }
         }
     }

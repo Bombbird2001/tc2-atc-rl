@@ -62,26 +62,24 @@ class TrafficSystemInterval: IntervalSystem(1f) {
      */
     override fun updateInterval() {
         GAME.gameServer?.apply {
-            /*
             val airportArrivalStats = arrivalStatsFamilyEntities.getEntities()
-            trafficMode = TrafficMode.ARRIVALS_TO_CONTROL
             when (trafficMode) {
-                TrafficMode.NORMAL -> {
-                    // Arrival spawning timer - normal traffic mode only
-                    arrivalSpawnTimerS -= interval
-                    if (arrivalSpawnTimerS < 0) {
-                        val arrivalCount = arrivalFamilyEntities.getEntities().filter { it[FlightType.mapper]?.type == FlightType.ARRIVAL }.size
-                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
-                        arrivalSpawnTimerS = 90f - 10 * (trafficValue - arrivalCount)
-                        arrivalSpawnTimerS = MathUtils.clamp(arrivalSpawnTimerS, 50f, 80f)
-                        if (arrivalCount < trafficValue.toInt()) createRandomArrival(Entries(airports).map { it.value }, this)
-                    }
-                }
+//                TrafficMode.NORMAL -> {
+//                    // Arrival spawning timer - normal traffic mode only
+//                    arrivalSpawnTimerS -= interval
+//                    if (arrivalSpawnTimerS < 0) {
+//                        val arrivalCount = arrivalFamilyEntities.getEntities().filter { it[FlightType.mapper]?.type == FlightType.ARRIVAL }.size
+//                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
+//                        arrivalSpawnTimerS = 90f - 10 * (trafficValue - arrivalCount)
+//                        arrivalSpawnTimerS = MathUtils.clamp(arrivalSpawnTimerS, 50f, 80f)
+//                        if (arrivalCount < trafficValue.toInt()) createRandomArrival(Entries(airports).map { it.value }, this)
+//                    }
+//                }
                 TrafficMode.ARRIVALS_TO_CONTROL -> {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
+                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.targetTrafficValue = 1
                         arptArrStats.arrivalSpawnTimer -= interval
                         if (arptArrStats.arrivalSpawnTimer > 0) continue
 
@@ -100,6 +98,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 TrafficMode.FLOW_RATE -> {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
+                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         if (arptEntity.has(ArrivalClosed.mapper)) continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
                         arptArrStats.arrivalSpawnTimer -= interval
@@ -116,7 +115,6 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 }
                 else -> FileLog.warn("TrafficSystem", "Invalid traffic mode $trafficMode")
             }
-             */
 
             // I Am God achievement counter; engine update rate already takes into account game speed up
             if (trafficMode == TrafficMode.FLOW_RATE && trafficValue >= 119.9f && playersInGame == 1.toByte())
@@ -263,7 +261,6 @@ class TrafficSystemInterval: IntervalSystem(1f) {
         }
 
         // Despawn checker
-        /*
         val checkDespawn = despawnFamilyEntities.getEntities()
         for (i in 0 until checkDespawn.size()) {
             checkDespawn[i]?.apply {
@@ -284,14 +281,13 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 despawnAircraft(this)
             }
         }
-         */
 
         // Update the levels of each conflict-able entity
         updateConflictLevels()
 
         // Traffic separation checking
-//        val conflictAble = conflictAbleFamilyEntities.getEntities()
-//        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
+        val conflictAble = conflictAbleFamilyEntities.getEntities()
+        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
     }
 
     /** Creates the conflict level array upon loading world data (MAX_ALT required) */

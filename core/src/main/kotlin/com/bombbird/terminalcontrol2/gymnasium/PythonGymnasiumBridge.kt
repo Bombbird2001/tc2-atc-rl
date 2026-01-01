@@ -44,6 +44,7 @@ import ktx.math.plusAssign
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.max
 
 class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     companion object {
@@ -293,12 +294,14 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
         for (i in 0 until aircraft.size) {
             val instructionStartOffset = CONSTANT_SIZE + i * SIZE_PER_INSTRUCTION
-            if (bytes[instructionStartOffset + 4] != 1.byte) throw IllegalStateException("$envName Invalid instruction for aircraft at index $i")
-            val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()
-            val clearedAlt = bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER
-            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER).toShort()
 
             val targetAircraft = aircraft.getValueAt(i).entity
+
+            if (bytes[instructionStartOffset + 4] != 1.byte || targetAircraft.has(LocalizerCaptured.mapper)) continue  // No clearance required
+            val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()
+            val clearedAlt = max(bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER, 2000)
+            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER).toShort()
+
             val prevClearance = getLatestClearanceState(targetAircraft)!!
             val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas
 

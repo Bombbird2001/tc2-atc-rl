@@ -81,7 +81,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.targetTrafficValue = 10 // TODO Change
+                        arptArrStats.targetTrafficValue = 5 // TODO Change
                         arptArrStats.arrivalSpawnTimer -= interval
                         if (arptArrStats.arrivalSpawnTimer > 0) continue
 

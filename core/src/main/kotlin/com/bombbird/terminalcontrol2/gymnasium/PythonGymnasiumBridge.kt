@@ -58,7 +58,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
         const val HDG_ACTION_MULTIPLIER = 5
         const val ALT_ACTION_MULTIPLIER = 1000
+        const val ALT_ACTION_ADDER = 2000
         const val SPD_ACTION_MULTIPLIER = 10
+        const val SPD_ACTION_ADDER = 160
 
         const val LOOP_EXIT_MS = 15000
 
@@ -121,6 +123,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 //            println("${System.currentTimeMillis()} Reset action ready")
 
             // Wait for action done event before continuing simulation
+//            println("${System.currentTimeMillis()} Waiting action done (reset)")
             if (!sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
                 // Assume RL program has exited, stop bridge loop
                 FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
@@ -299,8 +302,8 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
             if (bytes[instructionStartOffset + 4] != 1.byte || targetAircraft.has(LocalizerCaptured.mapper)) continue  // No clearance required
             val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()
-            val clearedAlt = max(bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER, 2000)
-            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER).toShort()
+            val clearedAlt = bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
+            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
 
             val prevClearance = getLatestClearanceState(targetAircraft)!!
             val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas

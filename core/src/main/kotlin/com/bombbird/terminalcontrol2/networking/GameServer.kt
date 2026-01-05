@@ -356,7 +356,7 @@ class GameServer private constructor(
                 loopRunning.set(true)
                 gameLoop()
                 cleanUp()
-                if (!isHeadlessTraining) saveGame(this)
+                if (!isHeadlessTraining && !DISABLE_SAVES) saveGame(this)
             } catch (e: Exception) {
                 e.printStackTrace()
                 HttpRequest.sendCrashReport(e, "GameServer", getMultiplayerType())
@@ -688,7 +688,7 @@ class GameServer private constructor(
                 // Check if autosave time is up
                 autosaveTime += (currMs - prevMs).toInt()
                 if (autosaveTime > AUTOSAVE_INTERVAL_MIN * 60 * 1000) {
-                    if (!isHeadlessTraining) saveGame(this)
+                    if (!isHeadlessTraining && !DISABLE_SAVES) saveGame(this)
                     autosaveTime -= AUTOSAVE_INTERVAL_MIN * 60 * 1000
                 }
 

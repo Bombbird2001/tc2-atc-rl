@@ -213,9 +213,11 @@ const val DISCORD_UPDATE_INTERVAL_S = 10f
 /** Training options */
 const val DISABLE_SAVES = true
 const val RANDOM_SPAWN_LOCATION = false
+const val WAIT_BETWEEN_SPAWNS = false
+const val SIMPLIFIED_LOC_CAP = true
 const val LOC_CAP_CHECK = true
 const val LOC_CAP_IAS_CHECK = false
-const val MAX_AIRCRAFT = 15
+const val MAX_RL_AIRCRAFT = 15
 const val CHECK_CONFLICT = false
 const val CONFLICT_PENALTY = 8
 const val PER_STEP_PENALTY = 0.03f

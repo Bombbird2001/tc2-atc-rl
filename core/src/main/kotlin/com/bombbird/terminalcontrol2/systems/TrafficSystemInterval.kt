@@ -9,8 +9,8 @@ import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
 import com.bombbird.terminalcontrol2.global.GAME
-import com.bombbird.terminalcontrol2.global.MAX_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.THUNDERSTORM_TAKEOFF_PROTECTION_DIST_NM
+import com.bombbird.terminalcontrol2.global.WAIT_BETWEEN_SPAWNS
 import com.bombbird.terminalcontrol2.traffic.*
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.utilities.*
@@ -81,9 +81,9 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.targetTrafficValue = 5 // TODO Change
+                        arptArrStats.targetTrafficValue = 1 // TODO Change
                         arptArrStats.arrivalSpawnTimer -= interval
-                        if (arptArrStats.arrivalSpawnTimer > 0) continue
+                        if (arptArrStats.arrivalSpawnTimer > 0 && WAIT_BETWEEN_SPAWNS) continue
 
                         val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: continue
                         if (arptId != 0.byte) continue

@@ -31,7 +31,7 @@ class ConflictManager {
 
     val wakeManager = WakeManager()
 
-    fun getConflictCountRL(aircraftArray: ImmutableArray<Entity>): Int {
+    fun getConflictsRL(aircraftArray: ImmutableArray<Entity>): GdxArray<Conflict> {
         conflicts.clear()
 
         val startingAlt = getConflictStartAltitude()
@@ -51,7 +51,7 @@ class ConflictManager {
         // Check MVA, restricted areas
         checkMVARestrictedConflict(aircraftArray)
 
-        return conflicts.size
+        return conflicts
     }
 
     /**

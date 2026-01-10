@@ -11,6 +11,7 @@ import ktx.ashley.get
 import ktx.ashley.has
 import ktx.ashley.hasNot
 import ktx.math.plus
+import ktx.math.plusAssign
 import ktx.math.times
 import kotlin.math.max
 import kotlin.math.tan
@@ -151,4 +152,26 @@ fun getAircraftApproach(aircraft: Entity): Entity? {
                 else null
             }
             ?: aircraft[VisualApproach.mapper]?.visual
+}
+
+/**
+ * Gets the shortest distance the [acPos] is from the [approach]'s LOC; starting from the position [minDistFromThrNm]
+ * from the threshold and ending at loc.maxDistNm distance away from the threshold
+ */
+fun distPxFromLoc(acPos: Position, approach: Entity, minDistFromThrNm: Int): Float {
+    val pos = approach[Position.mapper]!!
+    val loc = approach[Localizer.mapper]!!
+    val dir = approach[Direction.mapper]!!.trackUnitVector
+    val gs = approach[GlideSlope.mapper]
+
+    val offsetNm = gs?.offsetNm ?: 0f
+    dir.setLength((nmToPx(minDistFromThrNm) - nmToPx(offsetNm)))
+    val startPos = Vector2(pos.x, pos.y)
+    startPos.plusAssign(dir)
+    val endPos = Vector2(startPos)
+    dir.setLength(nmToPx(loc.maxDistNm.toInt() - minDistFromThrNm))
+    endPos.plusAssign(dir)
+    dir.nor()
+
+    return distPxFromPolygon(floatArrayOf(startPos.x, startPos.y, endPos.x, endPos.y), acPos.x, acPos.y)
 }

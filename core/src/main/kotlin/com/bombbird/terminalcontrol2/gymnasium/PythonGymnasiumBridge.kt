@@ -94,6 +94,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             // Reset the agent ID to aircraft mapping
             for (i in 0 until agentIdToAircraft.size) agentIdToAircraft[i] = null
 
+            assignedCallsigns.clear()
             resetAircraft()
             writeState(aircraft)
 
@@ -125,6 +126,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 //            println("${System.currentTimeMillis()} Set action ready")
 
             if (sharedMemoryIPC.needsResetAfterStep() || terminating) {
+//                println("$envName Reset requested after step: terminating is $terminating")
                 // Reset requested, exit update so won't get blocked
                 resetNeeded = true
                 terminating = false
@@ -260,7 +262,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                 stateArray.put(currLocCap)
                 stateArray.put(1)  // Aircraft exists
                 stateArray.put(currShouldTerminate)
-                nonTerminateCount += currShouldTerminate
+                nonTerminateCount += 1 - currShouldTerminate
 
                 acPrevLocDistPx[currAcInfo.icaoCallsign] = newLocDistPx
                 acPrevAlt[currAcInfo.icaoCallsign] = currAlt.altitudeFt

@@ -70,12 +70,21 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     var targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
     }
+    private var spawnedInCurrentSession = 0
 //    var clearancesChangePenalty = 0f
 
     val conflictManager = ConflictManager()
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
+
+    override fun getEpisodeSpawnCount(): Int {
+        return spawnedInCurrentSession
+    }
+
+    override fun incrementSpawnCount() {
+        spawnedInCurrentSession++
+    }
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
         if (loopExited) return
@@ -96,6 +105,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
             assignedCallsigns.clear()
             resetAircraft()
+            spawnedInCurrentSession = aircraft.size
             writeState(aircraft)
 
             terminating = false
@@ -146,7 +156,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             framesToAction = FRAMES_PER_ACTION
         }
 
-        if (framesToAction < -500000) {
+        if (framesToAction < -100000000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"
@@ -159,9 +169,6 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         if (aircraft.size > MAX_RL_AIRCRAFT) {
             throw IllegalArgumentException("$envName Aircraft must have <= $MAX_RL_AIRCRAFT items, got ${aircraft.size} instead")
         }
-
-        // Proceed flag
-        sharedMemoryIPC.setByte(0, 1)
 
         val conflicts = if (CHECK_CONFLICT) {
             // Conflict check
@@ -182,7 +189,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         }
 
         val stateArray = ByteBuffer.allocate(MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT).order(ByteOrder.nativeOrder())
-        val acToRemove = GdxArray<Entity>()
+        val acToRemove = GdxArray<Int>()
         for (currAgentID in 0 until agentIdToAircraft.size) {
             val currAircraft = agentIdToAircraft[currAgentID]
 
@@ -215,10 +222,10 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                     acOnLoc.add(currAcInfo.icaoCallsign)
                     acPrevLocDistPx.removeKey(currAcInfo.icaoCallsign)
                     acPrevAlt.removeKey(currAcInfo.icaoCallsign)
-                    FileLog.info("$envName PythonGymnasiumBridge", "${currAcInfo.icaoCallsign} captured LOC")
+//                    FileLog.info("$envName PythonGymnasiumBridge", "${currAcInfo.icaoCallsign} captured LOC")
 
                     if (SIMPLIFIED_LOC_CAP) {
-                        acToRemove.add(currAircraft)
+                        acToRemove.add(currAgentID)
                         currShouldTerminate = 1
                     }
                 } else {
@@ -272,7 +279,13 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         }
         sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)
 
-        for (ac in acToRemove) despawnAircraft(ac)
+        // Action waiting flag
+        sharedMemoryIPC.setByte(0, 1)
+
+        for (agentId in acToRemove) {
+            despawnAircraft(agentIdToAircraft[agentId]!!)
+            agentIdToAircraft[agentId] = null
+        }
         acToRemove.clear()
 
         return shouldTerminate == 1.byte || nonTerminateCount == 0
@@ -288,7 +301,8 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         val bytes = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
         val proceedFlag = bytes[0]
         if (proceedFlag.toInt() != 1) throw IllegalStateException("$envName ProceedFlag must be 1")
-        sharedMemoryIPC.setByte(0, 0) // Reset proceed flag
+        // Reset action waiting flag
+        sharedMemoryIPC.setByte(0, 0)
 //        println("${System.currentTimeMillis()} Proceed unset")
 
 //        println("Selected aircraft: $acIndex; aircraft count: ${aircraft.size}")
@@ -296,10 +310,10 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
 //        clearancesChangePenalty = 0f
 
-        for (i in 0 until aircraft.size) {
-            val instructionStartOffset = CONSTANT_SIZE + i * SIZE_PER_INSTRUCTION
+        for (currAgentID in 0 until agentIdToAircraft.size) {
+            val instructionStartOffset = CONSTANT_SIZE + currAgentID * SIZE_PER_INSTRUCTION
 
-            val targetAircraft = aircraft.getValueAt(i).entity
+            val targetAircraft = agentIdToAircraft[currAgentID] ?: continue
 
             if (bytes[instructionStartOffset + 4] != 1.byte || targetAircraft.has(LocalizerCaptured.mapper)) continue  // No clearance required
             val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()

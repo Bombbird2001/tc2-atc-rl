@@ -254,7 +254,7 @@ class GameServer private constructor(
     // var timeCounter = 0f
     // var frames = 0
     private var startTime = -1L
-    private val pythonGymBridge: GymnasiumBridge
+    val pythonGymBridge: GymnasiumBridge
     private val envName = "env[$envId]"
 
     // Loading screen callbacks
@@ -736,8 +736,11 @@ class GameServer private constructor(
             }
             aircraft.clear()
 
+            val airport = airports.getValueAt(0).entity
+
             // Force spawn 1 aircraft on start
-            createRandomArrivalForAirport(airports.getValueAt(0).entity, this)
+            createRandomArrivalForAirport(airport, this)
+            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
 
             return@update aircraft
         }

@@ -588,8 +588,6 @@ class AISystem: EntitySystem() {
         val locArmed = locArmedFamilyEntities.getEntities()
         for (i in 0 until locArmed.size()) {
             locArmed[i]?.apply {
-                if (!LOC_CAP_CHECK) return@apply
-
                 val pos = get(Position.mapper) ?: return@apply
                 val dir = get(Direction.mapper) ?: return@apply
                 val ias = get(IndicatedAirSpeed.mapper) ?: return@apply
@@ -611,9 +609,9 @@ class AISystem: EntitySystem() {
                     val alt = get(Altitude.mapper) ?: return@apply
                     val gsApp = get(GlideSlopeArmed.mapper)?.gsApp
                     if (gsApp != null) {
-                        val gsAltAtPos = getAppAltAtPos(gsApp, pos.x, pos.y, 0f)
-                        // Enforce LOC capture at or below glideslope altitude
-                        if (gsAltAtPos == null || alt.altitudeFt >= gsAltAtPos + 10) {
+                        val gsAltAtPos = min(getAppAltAtPos(gsApp, pos.x, pos.y, 0f) ?: Float.NEGATIVE_INFINITY, gsApp[GlideSlope.mapper]!!.maxInterceptAlt.toFloat())
+                        // Enforce LOC capture at or below glideslope altitude (including max intercept altitude)
+                        if (alt.altitudeFt >= gsAltAtPos + 10) {
                             return@apply
                         }
                     }
@@ -787,133 +785,135 @@ class AISystem: EntitySystem() {
             }
         }
 
-        // Update stabilized approach status, and checks for minimums
-        val checkGoAround = checkGoAroundFamilyEntities.getEntities()
-        for (i in 0 until checkGoAround.size()) {
-            checkGoAround[i]?.apply {
-                val gsApp = get(GlideSlopeCaptured.mapper)?.gsApp ?: get(GlideSlopeArmed.mapper)?.gsApp
-                val stepDownApp = get(StepDownApproach.mapper)?.stepDownApp
-                val visApp = get(VisualCaptured.mapper)?.visApp
-                val visParentApp = get(VisualCaptured.mapper)?.parentApp
-                val locApp = get(LocalizerCaptured.mapper)?.locApp
-                val appVert = gsApp ?: stepDownApp ?: visApp ?: return@apply
-                val appLat = locApp ?: visApp ?: return@apply
-                val rwyObj = appVert[ApproachInfo.mapper]?.rwyObj?.entity ?: return@apply
-                val rwyPos = rwyObj[CustomPosition.mapper] ?: return@apply
-                val pos = get(Position.mapper) ?: return@apply
-                val alt = get(Altitude.mapper) ?: return@apply
-                val ias = get(IndicatedAirSpeed.mapper) ?: return@apply
-                val perf = get(AircraftInfo.mapper)?.aircraftPerf ?: return@apply
+        if (!DISABLE_GO_AROUNDS) {
+            // Update stabilized approach status, and checks for minimums
+            val checkGoAround = checkGoAroundFamilyEntities.getEntities()
+            for (i in 0 until checkGoAround.size()) {
+                checkGoAround[i]?.apply {
+                    val gsApp = get(GlideSlopeCaptured.mapper)?.gsApp ?: get(GlideSlopeArmed.mapper)?.gsApp
+                    val stepDownApp = get(StepDownApproach.mapper)?.stepDownApp
+                    val visApp = get(VisualCaptured.mapper)?.visApp
+                    val visParentApp = get(VisualCaptured.mapper)?.parentApp
+                    val locApp = get(LocalizerCaptured.mapper)?.locApp
+                    val appVert = gsApp ?: stepDownApp ?: visApp ?: return@apply
+                    val appLat = locApp ?: visApp ?: return@apply
+                    val rwyObj = appVert[ApproachInfo.mapper]?.rwyObj?.entity ?: return@apply
+                    val rwyPos = rwyObj[CustomPosition.mapper] ?: return@apply
+                    val pos = get(Position.mapper) ?: return@apply
+                    val alt = get(Altitude.mapper) ?: return@apply
+                    val ias = get(IndicatedAirSpeed.mapper) ?: return@apply
+                    val perf = get(AircraftInfo.mapper)?.aircraftPerf ?: return@apply
 
-                val distFromRwyPx = calculateDistanceBetweenPoints(pos.x, pos.y, rwyPos.x, rwyPos.y)
-                val airportEntity = GAME.gameServer?.airports?.get(appLat[ApproachInfo.mapper]?.airportId)?.entity ?: return@apply
-                val arptAltFt = airportEntity[Altitude.mapper]?.altitudeFt ?: return@apply
-                val arptMetar = airportEntity[MetarInfo.mapper] ?: return@apply
+                    val distFromRwyPx = calculateDistanceBetweenPoints(pos.x, pos.y, rwyPos.x, rwyPos.y)
+                    val airportEntity = GAME.gameServer?.airports?.get(appLat[ApproachInfo.mapper]?.airportId)?.entity ?: return@apply
+                    val arptAltFt = airportEntity[Altitude.mapper]?.altitudeFt ?: return@apply
+                    val arptMetar = airportEntity[MetarInfo.mapper] ?: return@apply
 
-                // Check RVR requirement - 100m leeway
-                val rvrRequired = ((visParentApp ?: appLat)[Minimums.mapper]?.rvrM ?: 100) - 100
-                if (pxToM(distFromRwyPx) < rvrRequired) {
-                    if (arptMetar.visibilityM < rvrRequired) return@apply initiateGoAround(this, RecentGoAround.RWY_NOT_IN_SIGHT)
-                }
-
-                // Check decision altitude/height requirement
-                val decisionAlt = (visParentApp ?: appVert)[Minimums.mapper]?.baroAltFt ?: 0
-                val cloudCeilingAboveSeaLevel = arptAltFt + (arptMetar.ceilingHundredFtAGL ?: Short.MAX_VALUE) * 100
-                if (alt.altitudeFt < decisionAlt && cloudCeilingAboveSeaLevel < decisionAlt && cloudCeilingAboveSeaLevel < alt.altitudeFt)
-                    return@apply initiateGoAround(this, RecentGoAround.RWY_NOT_IN_SIGHT)
-
-                // Check opposite runway aircraft departure
-                // For all approaches, go around if aircraft is less than 7nm from runway and a departure has taken off
-                // less than 135s ago from the opposite (including dependent) runway
-                if (pxToNm(distFromRwyPx) < 7) {
-                    rwyObj[OppositeRunway.mapper]?.oppRwy?.get(RunwayPreviousDeparture.mapper)?.let {
-                        if (it.timeSinceDepartureS < 135) {
-                            return@apply initiateGoAround(this, RecentGoAround.TRAFFIC_TOO_CLOSE)
-                        }
+                    // Check RVR requirement - 100m leeway
+                    val rvrRequired = ((visParentApp ?: appLat)[Minimums.mapper]?.rvrM ?: 100) - 100
+                    if (pxToM(distFromRwyPx) < rvrRequired) {
+                        if (arptMetar.visibilityM < rvrRequired) return@apply initiateGoAround(this, RecentGoAround.RWY_NOT_IN_SIGHT)
                     }
-                    rwyObj[DependentOppositeRunway.mapper]?.depOppRwys?.let { depOppRwys ->
-                        for (j in 0 until depOppRwys.size) {
-                            depOppRwys[j][RunwayPreviousDeparture.mapper]?.let {
-                                if (it.timeSinceDepartureS < 135) {
-                                    return@apply initiateGoAround(this, RecentGoAround.TRAFFIC_TOO_CLOSE)
+
+                    // Check decision altitude/height requirement
+                    val decisionAlt = (visParentApp ?: appVert)[Minimums.mapper]?.baroAltFt ?: 0
+                    val cloudCeilingAboveSeaLevel = arptAltFt + (arptMetar.ceilingHundredFtAGL ?: Short.MAX_VALUE) * 100
+                    if (alt.altitudeFt < decisionAlt && cloudCeilingAboveSeaLevel < decisionAlt && cloudCeilingAboveSeaLevel < alt.altitudeFt)
+                        return@apply initiateGoAround(this, RecentGoAround.RWY_NOT_IN_SIGHT)
+
+                    // Check opposite runway aircraft departure
+                    // For all approaches, go around if aircraft is less than 7nm from runway and a departure has taken off
+                    // less than 135s ago from the opposite (including dependent) runway
+                    if (pxToNm(distFromRwyPx) < 7) {
+                        rwyObj[OppositeRunway.mapper]?.oppRwy?.get(RunwayPreviousDeparture.mapper)?.let {
+                            if (it.timeSinceDepartureS < 135) {
+                                return@apply initiateGoAround(this, RecentGoAround.TRAFFIC_TOO_CLOSE)
+                            }
+                        }
+                        rwyObj[DependentOppositeRunway.mapper]?.depOppRwys?.let { depOppRwys ->
+                            for (j in 0 until depOppRwys.size) {
+                                depOppRwys[j][RunwayPreviousDeparture.mapper]?.let {
+                                    if (it.timeSinceDepartureS < 135) {
+                                        return@apply initiateGoAround(this, RecentGoAround.TRAFFIC_TOO_CLOSE)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // Check wake turbulence tolerance at less than 7nm from runway
-                val wakeToleranceValue = get(WakeTolerance.mapper)?.accumulation ?: 0f
-                if (wakeToleranceValue > 30f && pxToNm(distFromRwyPx) < 7) {
-                    return@apply initiateGoAround(this, RecentGoAround.WAKE_TURBULENCE)
-                }
+                    // Check wake turbulence tolerance at less than 7nm from runway
+                    val wakeToleranceValue = get(WakeTolerance.mapper)?.accumulation ?: 0f
+                    if (wakeToleranceValue > 30f && pxToNm(distFromRwyPx) < 7) {
+                        return@apply initiateGoAround(this, RecentGoAround.WAKE_TURBULENCE)
+                    }
 
-                // Check distance
-                // For visual approach, check for stabilized approach by 1.2nm from threshold
-                // For approach with localizer and/or glide slope, check for stabilized approach by 3.2nm from threshold
-                val stabDistNm = if (gsApp != null || locApp != null) 3.2f else 1.2f
-                if (pxToNm(distFromRwyPx) > stabDistNm) return@apply // No need to check if aircraft is not yet close enough to the runway
+                    // Check distance
+                    // For visual approach, check for stabilized approach by 1.2nm from threshold
+                    // For approach with localizer and/or glide slope, check for stabilized approach by 3.2nm from threshold
+                    val stabDistNm = if (gsApp != null || locApp != null) 3.2f else 1.2f
+                    if (pxToNm(distFromRwyPx) > stabDistNm) return@apply // No need to check if aircraft is not yet close enough to the runway
 
-                // Check airspeed
-                // For visual approach, check speed not more than 10 knots above approach speed
-                // For approach with glide slope, check speed not more than 20 knots above approach speed
-                val maxAllowableIas = perf.appSpd + (if (gsApp != null) 20 else 10)
-                if (ias.iasKt > maxAllowableIas) {
-                    return@apply initiateGoAround(this, RecentGoAround.TOO_FAST)
-                }
+                    // Check airspeed
+                    // For visual approach, check speed not more than 10 knots above approach speed
+                    // For approach with glide slope, check speed not more than 20 knots above approach speed
+                    val maxAllowableIas = perf.appSpd + (if (gsApp != null) 20 else 10)
+                    if (ias.iasKt > maxAllowableIas) {
+                        return@apply initiateGoAround(this, RecentGoAround.TOO_FAST)
+                    }
 
-                // Check altitude
-                // For visual approach, check altitude not more than 200 feet above 3 degree glide path altitude
-                // For approach with glide slope, check altitude not more than (0.12 * glide angle) degrees (but will be
-                // capped at min 50 feet difference) above the glide path
-                val maxAllowableAlt = if (gsApp != null) {
-                    val gs = appVert[GlideSlope.mapper] ?: return@apply
-                    val appPos = appVert[Position.mapper] ?: return@apply
-                    val appDistPx = calculateDistanceBetweenPoints(pos.x, pos.y, appPos.x, appPos.y)
-                    val gsDistPx = appDistPx + nmToPx(gs.offsetNm)
-                    val maxGsAngleDeg = 1.12 * gs.glideAngle
-                    max(pxToFt(gsDistPx * tan(Math.toRadians(maxGsAngleDeg)).toFloat()), (getAppAltAtPos(appVert, pos.x, pos.y, 0f) ?: return@apply) + 50)
-                } else {
-                    (getAppAltAtPos(appVert, pos.x, pos.y, 0f) ?: return@apply) + 200
-                }
-                if (alt.altitudeFt > maxAllowableAlt) {
-                    return@apply initiateGoAround(this, RecentGoAround.TOO_HIGH)
-                }
+                    // Check altitude
+                    // For visual approach, check altitude not more than 200 feet above 3 degree glide path altitude
+                    // For approach with glide slope, check altitude not more than (0.12 * glide angle) degrees (but will be
+                    // capped at min 50 feet difference) above the glide path
+                    val maxAllowableAlt = if (gsApp != null) {
+                        val gs = appVert[GlideSlope.mapper] ?: return@apply
+                        val appPos = appVert[Position.mapper] ?: return@apply
+                        val appDistPx = calculateDistanceBetweenPoints(pos.x, pos.y, appPos.x, appPos.y)
+                        val gsDistPx = appDistPx + nmToPx(gs.offsetNm)
+                        val maxGsAngleDeg = 1.12 * gs.glideAngle
+                        max(pxToFt(gsDistPx * tan(Math.toRadians(maxGsAngleDeg)).toFloat()), (getAppAltAtPos(appVert, pos.x, pos.y, 0f) ?: return@apply) + 50)
+                    } else {
+                        (getAppAltAtPos(appVert, pos.x, pos.y, 0f) ?: return@apply) + 200
+                    }
+                    if (alt.altitudeFt > maxAllowableAlt) {
+                        return@apply initiateGoAround(this, RecentGoAround.TOO_HIGH)
+                    }
 
-                // Check position; only when aircraft is still more than 0.5nm from runway threshold
-                // For visual approach, aircraft position should be within 10 degrees of track to runway
-                // For approach with localizer, aircraft position should be within 1 degree of track to localizer
-                val maxAllowableDeviation = if (locApp != null) 1 else 20
-                val locPos = locApp?.get(Position.mapper)
-                // We ignore deviation if a final line up is required for localizer
-                val isLineUp = locApp?.get(LineUpDist.mapper) != null
-                val trackToRwy = getRequiredTrack(pos.x, pos.y,  locPos?.x ?: rwyPos.x, locPos?.y ?: rwyPos.y)
-                val appTrack = convertWorldAndRenderDeg(appLat[Direction.mapper]?.trackUnitVector?.angleDeg() ?: return@apply) + 180
-                val deviation = abs(findDeltaHeading(trackToRwy, appTrack, CommandTarget.TURN_DEFAULT))
-                if (!isLineUp && pxToNm(distFromRwyPx) > 0.5f && deviation > maxAllowableDeviation) {
-                    return@apply initiateGoAround(this, RecentGoAround.UNSTABLE)
-                }
+                    // Check position; only when aircraft is still more than 0.5nm from runway threshold
+                    // For visual approach, aircraft position should be within 10 degrees of track to runway
+                    // For approach with localizer, aircraft position should be within 1 degree of track to localizer
+                    val maxAllowableDeviation = if (locApp != null) 1 else 20
+                    val locPos = locApp?.get(Position.mapper)
+                    // We ignore deviation if a final line up is required for localizer
+                    val isLineUp = locApp?.get(LineUpDist.mapper) != null
+                    val trackToRwy = getRequiredTrack(pos.x, pos.y,  locPos?.x ?: rwyPos.x, locPos?.y ?: rwyPos.y)
+                    val appTrack = convertWorldAndRenderDeg(appLat[Direction.mapper]?.trackUnitVector?.angleDeg() ?: return@apply) + 180
+                    val deviation = abs(findDeltaHeading(trackToRwy, appTrack, CommandTarget.TURN_DEFAULT))
+                    if (!isLineUp && pxToNm(distFromRwyPx) > 0.5f && deviation > maxAllowableDeviation) {
+                        return@apply initiateGoAround(this, RecentGoAround.UNSTABLE)
+                    }
 
-                // Check wind
-                // For all approaches, runway tailwind should be maximum 15 knots, crosswind should be maximum 25 knots
-                rwyObj[RunwayWindComponents.mapper]?.let {
-                    if (it.tailwindKt > 15) return@apply initiateGoAround(this, RecentGoAround.STRONG_TAILWIND)
-                    if (it.crosswindKt > 25) return@apply initiateGoAround(this, RecentGoAround.STRONG_CROSSWIND)
-                }
+                    // Check wind
+                    // For all approaches, runway tailwind should be maximum 15 knots, crosswind should be maximum 25 knots
+                    rwyObj[RunwayWindComponents.mapper]?.let {
+                        if (it.tailwindKt > 15) return@apply initiateGoAround(this, RecentGoAround.STRONG_TAILWIND)
+                        if (it.crosswindKt > 25) return@apply initiateGoAround(this, RecentGoAround.STRONG_CROSSWIND)
+                    }
 
-                // Check windshear go around
-                if (hasNot(WindshearGoAround.mapper)) {
-                    this += WindshearGoAround(generateRandomWindshearGoAround(rwyObj, arptMetar))
-                }
-                if (get(WindshearGoAround.mapper)?.goAround == true) {
-                    return@apply initiateGoAround(this, RecentGoAround.WINDSHEAR)
-                }
+                    // Check windshear go around
+                    if (hasNot(WindshearGoAround.mapper)) {
+                        this += WindshearGoAround(generateRandomWindshearGoAround(rwyObj, arptMetar))
+                    }
+                    if (get(WindshearGoAround.mapper)?.goAround == true) {
+                        return@apply initiateGoAround(this, RecentGoAround.WINDSHEAR)
+                    }
 
-                // Check runway occupancy or runway closed
-                // For all approaches, go around if runway is still occupied or closed by the time aircraft reaches 150 feet AGL
-                val rwyAlt = rwyObj[Altitude.mapper]?.altitudeFt
-                if (rwyAlt != null && (rwyObj.has(RunwayOccupied.mapper) || rwyObj.has(RunwayClosed.mapper)) && alt.altitudeFt < rwyAlt + 150) {
-                    return@apply initiateGoAround(this, RecentGoAround.RWY_NOT_CLEAR)
+                    // Check runway occupancy or runway closed
+                    // For all approaches, go around if runway is still occupied or closed by the time aircraft reaches 150 feet AGL
+                    val rwyAlt = rwyObj[Altitude.mapper]?.altitudeFt
+                    if (rwyAlt != null && (rwyObj.has(RunwayOccupied.mapper) || rwyObj.has(RunwayClosed.mapper)) && alt.altitudeFt < rwyAlt + 150) {
+                        return@apply initiateGoAround(this, RecentGoAround.RWY_NOT_CLEAR)
+                    }
                 }
             }
         }

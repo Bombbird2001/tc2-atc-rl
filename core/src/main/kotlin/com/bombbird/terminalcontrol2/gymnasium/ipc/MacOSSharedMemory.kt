@@ -29,6 +29,7 @@ class MacOSSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
 
         ptr = MacOSLibC.mmap(null, fileSizeBytes, PROT_READ or PROT_WRITE, MAP_SHARED, fd, 0)
         if (Pointer.nativeValue(ptr) == -1L) throw NullPointerException("mmap failed")
+        MacOSLibC.close(fd)
 
         buffer = ptr.getByteBuffer(0, fileSizeBytes)
     }
@@ -98,6 +99,5 @@ class MacOSSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
         MacOSLibC.sem_close(resetAfterStep)
 
         MacOSLibC.munmap(ptr, fileSizeBytes)
-        MacOSLibC.close(fd)
     }
 }

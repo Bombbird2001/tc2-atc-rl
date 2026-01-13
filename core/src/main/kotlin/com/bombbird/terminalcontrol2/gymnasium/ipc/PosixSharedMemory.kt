@@ -29,6 +29,7 @@ class PosixSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
 
         ptr = PosixLibC.mmap(null, fileSizeBytes, PROT_READ or PROT_WRITE, MAP_SHARED, fd, 0)
         if (Pointer.nativeValue(ptr) == -1L) throw NullPointerException("mmap failed")
+        PosixLibC.close(fd)
 
         buffer = ptr.getByteBuffer(0, fileSizeBytes)
     }
@@ -99,6 +100,5 @@ class PosixSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
         PosixLibC.sem_close(resetAfterStep)
 
         PosixLibC.munmap(ptr, fileSizeBytes)
-        PosixLibC.close(fd)
     }
 }

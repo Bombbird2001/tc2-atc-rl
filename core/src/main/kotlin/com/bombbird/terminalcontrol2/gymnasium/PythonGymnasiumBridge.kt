@@ -210,46 +210,53 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                 val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper)) 1.byte else 0.byte
                 var acReward = 0f
                 var currShouldTerminate = shouldTerminate
+                var ignorePositiveRewards = false
 
                 if (currLocCap == 1.byte) {
                     // If aircraft has previously captured LOC, ignore its rewards
-                    if (acOnLoc.contains(currAcInfo.icaoCallsign)) {
-                        continue
-                    }
+                    if (acOnLoc.contains(currAcInfo.icaoCallsign)) ignorePositiveRewards = true
+                    else {
+                        // Lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
+                        acReward += LOC_CAP_REWARD
+                        acOnLoc.add(currAcInfo.icaoCallsign)
+                        acPrevLocDistPx.removeKey(currAcInfo.icaoCallsign)
+                        acPrevAlt.removeKey(currAcInfo.icaoCallsign)
+//                        FileLog.info("$envName PythonGymnasiumBridge", "${currAcInfo.icaoCallsign} captured LOC")
 
-                    // Lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
-                    acReward += LOC_CAP_REWARD
-                    acOnLoc.add(currAcInfo.icaoCallsign)
-                    acPrevLocDistPx.removeKey(currAcInfo.icaoCallsign)
-                    acPrevAlt.removeKey(currAcInfo.icaoCallsign)
-//                    FileLog.info("$envName PythonGymnasiumBridge", "${currAcInfo.icaoCallsign} captured LOC")
-
-                    if (SIMPLIFIED_LOC_CAP) {
-                        acToRemove.add(currAgentID)
-                        currShouldTerminate = 1
+                        if (SIMPLIFIED_LOC_CAP) {
+                            acToRemove.add(currAgentID)
+                            currShouldTerminate = 1
+                        }
                     }
                 } else {
                     acOnLoc.remove(currAcInfo.icaoCallsign)
                 }
 
-                // Reward from previous action
-                // Constant -0.03 per time step + decrease in distance towards LOC line segment
-                // + decrease in altitude
-                val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
-                if (acPrevLocDistPx.containsKey(currAcInfo.icaoCallsign)) {
-                    val distReward = (acPrevLocDistPx[currAcInfo.icaoCallsign] - newLocDistPx) / 1600
-                    val altReward = (acPrevAlt[currAcInfo.icaoCallsign] - currAlt.altitudeFt) / 12000
-                    acReward += distReward + altReward - PER_STEP_PENALTY
+                if (!ignorePositiveRewards) {
+                    // Reward from previous action
+                    // Constant -0.03 per time step + decrease in distance towards LOC line segment (x4 penalty if distance increases)
+                    // + decrease in altitude (x4 penalty if altitude increases)
+                    val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
+                    if (acPrevLocDistPx.containsKey(currAcInfo.icaoCallsign)) {
+                        val deltaDist = acPrevLocDistPx[currAcInfo.icaoCallsign] - newLocDistPx
+                        val distReward = if (deltaDist >= 0) deltaDist / 1600 else deltaDist / 400
+                        val deltaAlt = acPrevAlt[currAcInfo.icaoCallsign] - currAlt.altitudeFt
+                        val altReward = if (deltaAlt >= 0) deltaAlt / 12000 else deltaAlt / 3000
+                        acReward += distReward + altReward - PER_STEP_PENALTY
+                    }
+
+                    acPrevLocDistPx[currAcInfo.icaoCallsign] = newLocDistPx
+                    acPrevAlt[currAcInfo.icaoCallsign] = currAlt.altitudeFt
                 }
 
                 // TODO Assign negative reward for conflict involving this aircraft
                 // Smaller negative reward for other aircraft
 
                 // Clearance change penalty from previous clearance
-//            reward -= clearancesChangePenalty
+//                reward -= clearancesChangePenalty
 
                 // Discourage aircraft from loitering too long close to LOC
-//            if (newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) totalAcReward -= 0.06f
+//                if (newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) totalAcReward -= 0.06f
 
                 // Reward, ICAO type, x, y, alt, ias, track, track rate, vertical speed, cleared alt, cleared hdg, cleared IAS, LOC cap, mask
                 stateArray.putFloat(acReward)
@@ -270,9 +277,6 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                 stateArray.put(1)  // Aircraft exists
                 stateArray.put(currShouldTerminate)
                 nonTerminateCount += 1 - currShouldTerminate
-
-                acPrevLocDistPx[currAcInfo.icaoCallsign] = newLocDistPx
-                acPrevAlt[currAcInfo.icaoCallsign] = currAlt.altitudeFt
             }
 
             stateArray.put(currAgentID.byte)

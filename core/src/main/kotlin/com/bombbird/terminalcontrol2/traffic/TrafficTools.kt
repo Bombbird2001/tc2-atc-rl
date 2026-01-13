@@ -93,10 +93,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     if (RANDOM_SPAWN_LOCATION) {
         val spawnDir = MathUtils.random(360f)
 
-        // f(r) should be proportional to r (r is spawn distance from center)
-        // F(r) = r^2 / (maxDist^2 - minDist^2) <=> r = sqrt((maxDist^2 - minDist^2) * F(r) + minDist^2) where F(r) ~ U[0,1] (Thank you ST4231)
-        val scale = MAX_SPAWN_DIST_NM * MAX_SPAWN_DIST_NM - MIN_SPAWN_DIST_NM * MIN_SPAWN_DIST_NM
-        val distNm = sqrt(scale * MathUtils.random() + MIN_SPAWN_DIST_NM * MIN_SPAWN_DIST_NM)
+        val distNm = 39.5f
 
         val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
         val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()

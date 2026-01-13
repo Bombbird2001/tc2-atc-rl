@@ -83,4 +83,8 @@ class WindowsSharedMemory(envId: String, fileSizeBytes: Int): SharedMemoryIPC {
     override fun readShort(offset: Int): Short {
         return buffer.getShort(offset.toLong())
     }
+
+    override fun shutdown() {
+        // TODO Cleanup
+    }
 }

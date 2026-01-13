@@ -5,7 +5,7 @@ import com.sun.jna.Pointer
 import com.sun.jna.platform.linux.ErrNo
 import java.nio.ByteBuffer
 
-class MacOSSharedMemory(envId: String, fileSizeBytes: Long): SharedMemoryIPC {
+class MacOSSharedMemory(envId: String, private val fileSizeBytes: Long): SharedMemoryIPC {
     companion object {
         const val O_RDWR = 0x0002
         const val PROT_READ = 0x1
@@ -21,11 +21,13 @@ class MacOSSharedMemory(envId: String, fileSizeBytes: Long): SharedMemoryIPC {
     val actionDone = MacOSLibC.sem_open("${SharedMemoryIPC.ACTION_DONE_PREFIX}$envId", O_RDWR)
     val resetAfterStep = MacOSLibC.sem_open("${SharedMemoryIPC.RESET_AFTER_STEP_PREFIX}$envId", O_RDWR)
 
+    private val fd: Int = MacOSLibC.shm_open("${SharedMemoryIPC.SHM_FILE_PREFIX}$envId", O_RDWR, "666".toInt(8))
+    private val ptr: Pointer
+
     init {
-        val fd = MacOSLibC.shm_open("${SharedMemoryIPC.SHM_FILE_PREFIX}$envId", O_RDWR, "666".toInt(8))
         if (fd < 0) throw NullPointerException("Unable to read shared memory file")
 
-        val ptr = MacOSLibC.mmap(null, fileSizeBytes, PROT_READ or PROT_WRITE, MAP_SHARED, fd, 0)
+        ptr = MacOSLibC.mmap(null, fileSizeBytes, PROT_READ or PROT_WRITE, MAP_SHARED, fd, 0)
         if (Pointer.nativeValue(ptr) == -1L) throw NullPointerException("mmap failed")
 
         buffer = ptr.getByteBuffer(0, fileSizeBytes)
@@ -86,5 +88,16 @@ class MacOSSharedMemory(envId: String, fileSizeBytes: Long): SharedMemoryIPC {
 
     override fun readShort(offset: Int): Short {
         return buffer.getShort(offset)
+    }
+
+    override fun shutdown() {
+        MacOSLibC.sem_close(trainerInitialized)
+        MacOSLibC.sem_close(resetSim)
+        MacOSLibC.sem_close(actionReady)
+        MacOSLibC.sem_close(actionDone)
+        MacOSLibC.sem_close(resetAfterStep)
+
+        MacOSLibC.munmap(ptr, fileSizeBytes)
+        MacOSLibC.close(fd)
     }
 }

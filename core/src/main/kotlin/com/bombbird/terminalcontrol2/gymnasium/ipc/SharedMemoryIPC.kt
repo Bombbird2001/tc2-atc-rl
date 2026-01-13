@@ -39,6 +39,8 @@ interface SharedMemoryIPC {
     fun readBytes(offset: Int, bytes: Int): ByteArray
 
     fun readShort(offset: Int): Short
+
+    fun shutdown()
 }
 
 object SharedMemoryIPCFactory {

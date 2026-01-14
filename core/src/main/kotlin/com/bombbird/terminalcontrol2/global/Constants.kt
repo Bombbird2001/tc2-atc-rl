@@ -216,6 +216,7 @@ const val RANDOM_SPAWN_LOCATION = false
 const val WAIT_BETWEEN_SPAWNS = true
 const val SPAWN_INTERVAL_S = 60f  // Ignored if WAIT_BETWEEN_SPAWNS is false
 const val SIMPLIFIED_LOC_CAP = false
+const val LOC_CAP_MAX_INTERCEPT_ANGLE = 45
 const val LOC_CAP_IAS_CHECK = false
 const val AIRCRAFT_TO_SPAWN = 15
 const val MAX_RL_AIRCRAFT = 15

@@ -66,6 +66,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     val acPrevAlt: GdxArrayMap<String, Float> = GdxArrayMap()
     val acOnLoc: HashSet<String> = HashSet()
     val agentIdToAircraft = Array<Entity?>(MAX_RL_AIRCRAFT) { null }
+    val agentClearanceChangePenalty = Array(MAX_RL_AIRCRAFT) { 0f }
     var assignedCallsigns = GdxSet<String>()
     var targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
@@ -106,6 +107,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             assignedCallsigns.clear()
             resetAircraft()
             spawnedInCurrentSession = aircraft.size
+            acOnLoc.clear()
             writeState(aircraft)
 
             terminating = false
@@ -208,7 +210,8 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                 val currHdg = modulateHeading(convertWorldAndRenderDeg(currGroundTrack.trackVectorPxps.angleDeg()))
                 val currPrevClearance = getLatestClearanceState(currAircraft)!!
                 val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper)) 1.byte else 0.byte
-                var acReward = 0f
+                var acReward = -agentClearanceChangePenalty[currAgentID]
+                agentClearanceChangePenalty[currAgentID] = 0f
                 var currShouldTerminate = shouldTerminate
                 var ignorePositiveRewards = false
 
@@ -234,7 +237,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
                 if (!ignorePositiveRewards) {
                     // Reward from previous action
-                    // Constant -0.03 per time step + decrease in distance towards LOC line segment (x4 penalty if distance increases)
+                    // Constant per time step penalty + decrease in distance towards LOC line segment (x4 penalty if distance increases)
                     // + decrease in altitude (x4 penalty if altitude increases)
                     val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
                     if (acPrevLocDistPx.containsKey(currAcInfo.icaoCallsign)) {
@@ -300,8 +303,6 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             throw IllegalArgumentException("$envName Aircraft must have <= $MAX_RL_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
-//        val targetAircraft = aircraft.getValueAt(0).entity
-
         val bytes = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
         val proceedFlag = bytes[0]
         if (proceedFlag.toInt() != 1) throw IllegalStateException("$envName ProceedFlag must be 1")
@@ -310,9 +311,6 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 //        println("${System.currentTimeMillis()} Proceed unset")
 
 //        println("Selected aircraft: $acIndex; aircraft count: ${aircraft.size}")
-//        println("Issue instruction: $issueInstruction, clearedHdg: $clearedHdg, clearedAlt: $clearedAlt, clearedIas: $clearedIas")
-
-//        clearancesChangePenalty = 0f
 
         for (currAgentID in 0 until agentIdToAircraft.size) {
             val instructionStartOffset = CONSTANT_SIZE + currAgentID * SIZE_PER_INSTRUCTION
@@ -330,6 +328,11 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             if (changed) {
                 val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
                 addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
+
+                val clearanceChangePenalty = (if (prevClearance.vectorHdg != clearedHdg) 0.025f else 0f) +
+                        (if (prevClearance.clearedAlt != clearedAlt) 0.025f else 0f) +
+                        (if (prevClearance.clearedIas != clearedIas) 0.025f else 0f)
+                agentClearanceChangePenalty[currAgentID] = clearanceChangePenalty
             }
         }
     }

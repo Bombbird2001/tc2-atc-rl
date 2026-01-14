@@ -607,18 +607,20 @@ class AISystem: EntitySystem() {
 
                     // Additional glideslope altitude check
                     val alt = get(Altitude.mapper) ?: return@apply
+                    val latestClearance = getLatestClearanceState(this) ?: return@apply
                     val gsApp = get(GlideSlopeArmed.mapper)?.gsApp
                     if (gsApp != null) {
                         val gsAltAtPos = min(getAppAltAtPos(gsApp, pos.x, pos.y, 0f) ?: Float.NEGATIVE_INFINITY, gsApp[GlideSlope.mapper]!!.maxInterceptAlt.toFloat())
                         // Enforce LOC capture at or below glideslope altitude (including max intercept altitude)
-                        if (alt.altitudeFt >= gsAltAtPos + 10) {
+                        // Restriction also applies to the cleared altitude
+                        if (alt.altitudeFt >= gsAltAtPos + 10 || latestClearance.clearedAlt >= gsAltAtPos + 10) {
                             return@apply
                         }
                     }
 
                     // Additional intercept angle check - max 80 degrees offset
                     val angleDiff = findDeltaHeading(convertWorldAndRenderDeg(dir.trackUnitVector.angleDeg()),locCourseHdg, CommandTarget.TURN_DEFAULT)
-                    if (abs(angleDiff) > 80) {
+                    if (abs(angleDiff) > LOC_CAP_MAX_INTERCEPT_ANGLE) {
                         return@apply
                     }
 

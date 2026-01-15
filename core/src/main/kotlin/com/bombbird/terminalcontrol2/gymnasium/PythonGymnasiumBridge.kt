@@ -12,6 +12,7 @@ import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CHECK_CONFLICT
+import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_REWARD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
@@ -329,9 +330,9 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                 val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
                 addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
 
-                val clearanceChangePenalty = (if (prevClearance.vectorHdg != clearedHdg) 0.025f else 0f) +
-                        (if (prevClearance.clearedAlt != clearedAlt) 0.025f else 0f) +
-                        (if (prevClearance.clearedIas != clearedIas) 0.025f else 0f)
+                val clearanceChangePenalty = (if (prevClearance.vectorHdg != clearedHdg) CLEARANCE_CHANGE_PENALTY else 0f) +
+                        (if (prevClearance.clearedAlt != clearedAlt) CLEARANCE_CHANGE_PENALTY else 0f) +
+                        (if (prevClearance.clearedIas != clearedIas) CLEARANCE_CHANGE_PENALTY else 0f)
                 agentClearanceChangePenalty[currAgentID] = clearanceChangePenalty
             }
         }

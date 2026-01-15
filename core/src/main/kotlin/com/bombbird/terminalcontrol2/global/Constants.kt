@@ -223,6 +223,7 @@ const val MAX_RL_AIRCRAFT = 15
 const val DISABLE_GO_AROUNDS = true
 const val CHECK_CONFLICT = false
 const val CONFLICT_PENALTY = 8
+const val CLEARANCE_CHANGE_PENALTY = 0.03f
 const val PER_STEP_PENALTY = 0.04f
 const val LOC_CAP_REWARD = 4
 const val MAX_SPAWN_DIST_NM = 60

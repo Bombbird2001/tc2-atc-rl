@@ -46,10 +46,10 @@ class ConflictManager {
         }
 
         // Check aircraft separation with one another
-        checkAircraftSeparationMinimaConflict(conflictLevels)
+        if (CHECK_AIRCRAFT_CONFLICT) checkAircraftSeparationMinimaConflict(conflictLevels)
 
         // Check MVA, restricted areas
-        checkMVARestrictedConflict(aircraftArray)
+        if (CHECK_MVA_CONFLICT) checkMVARestrictedConflict(aircraftArray)
 
         return conflicts
     }

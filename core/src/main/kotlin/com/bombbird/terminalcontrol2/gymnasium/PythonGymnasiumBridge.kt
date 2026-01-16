@@ -11,8 +11,10 @@ import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
-import com.bombbird.terminalcontrol2.global.CHECK_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
+import com.bombbird.terminalcontrol2.global.CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_REWARD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
@@ -173,11 +175,12 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             throw IllegalArgumentException("$envName Aircraft must have <= $MAX_RL_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
-        val conflicts = if (CHECK_CONFLICT) {
+        val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT) {
             // Conflict check
             conflictManager.getConflictsRL(ImmutableArray(aircraft.values().map { it.entity }.toGdxArray()))
         } else GdxArray()
-        val shouldTerminate = (if (conflicts.size > 0) 1 else 0).byte
+//        val shouldTerminate = (if (conflicts.size > 0) 1 else 0).byte
+        val shouldTerminate = 0.byte
         var nonTerminateCount = 0
 
         // Assign agent IDs to newly spawned aircraft, if any
@@ -253,11 +256,11 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
                     acPrevAlt[currAcInfo.icaoCallsign] = currAlt.altitudeFt
                 }
 
-                // TODO Assign negative reward for conflict involving this aircraft
-                // Smaller negative reward for other aircraft
-
-                // Clearance change penalty from previous clearance
-//                reward -= clearancesChangePenalty
+                // Assign negative reward for conflict involving this aircraft
+                if (conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft } != null) {
+                    acReward -= CONFLICT_PENALTY
+                }
+                // TODO Smaller negative reward for other aircraft?
 
                 // Discourage aircraft from loitering too long close to LOC
 //                if (newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) totalAcReward -= 0.06f

@@ -13,6 +13,7 @@ import com.bombbird.terminalcontrol2.global.*
 import com.bombbird.terminalcontrol2.gymnasium.PythonGymnasiumBridge
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.navigation.calculateRouteSegments
+import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
 import com.bombbird.terminalcontrol2.systems.TrafficSystemInterval
 import com.bombbird.terminalcontrol2.systems.TrajectorySystemInterval
 import com.esotericsoftware.minlog.Log
@@ -152,14 +153,14 @@ fun heatmapColor(value: Float): Color {
 }
 
 fun renderRewardValues(shapeRenderer: ShapeRenderer) {
-    val app = GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L") ?: return
+    val app = GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")?.entity ?: return
     val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)
     val offsetY = -MathUtils.cosDeg(23f) * nmToPx(12.5f)
     for (x in -50..50) {
         for (y in -50..50) {
             val pxX = nmToPx(x) + offsetX
             val pxY = nmToPx(y) + offsetY
-            val distNm = pxToNm(PythonGymnasiumBridge.distPxFromLoc(Position(pxX, pxY), app))
+            val distNm = pxToNm(distPxFromLoc(Position(pxX, pxY), app, 6))
             shapeRenderer.color = heatmapColor(distNm)
             shapeRenderer.circle(pxX, pxY, 5f)
         }

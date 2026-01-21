@@ -1,72 +1,63 @@
 package com.bombbird.terminalcontrol2.gymnasium
 
+import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
-import com.badlogic.gdx.math.Vector2
+import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
-import com.bombbird.terminalcontrol2.components.CommandTarget
-import com.bombbird.terminalcontrol2.components.Direction
-import com.bombbird.terminalcontrol2.components.GlideSlope
 import com.bombbird.terminalcontrol2.components.GroundTrack
-import com.bombbird.terminalcontrol2.components.Localizer
+import com.bombbird.terminalcontrol2.components.IndicatedAirSpeed
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
+import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
+import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
+import com.bombbird.terminalcontrol2.global.CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.GAME
-import com.bombbird.terminalcontrol2.global.LOC_CAP_CHECK
-import com.bombbird.terminalcontrol2.global.MAG_HDG_DEV
+import com.bombbird.terminalcontrol2.global.LOC_CAP_REWARD
+import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
+import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
+import com.bombbird.terminalcontrol2.global.SIMPLIFIED_LOC_CAP
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPCFactory
-import com.bombbird.terminalcontrol2.navigation.Approach
+import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
+import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.byte
 import com.bombbird.terminalcontrol2.utilities.convertWorldAndRenderDeg
-import com.bombbird.terminalcontrol2.utilities.distPxFromPolygon
-import com.bombbird.terminalcontrol2.utilities.findDeltaHeading
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.modulateHeading
-import com.bombbird.terminalcontrol2.utilities.nmToPx
-import com.bombbird.terminalcontrol2.utilities.pxpsToKt
 import ktx.ashley.get
 import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
-import ktx.math.plusAssign
-import kotlin.math.abs
+import ktx.collections.GdxSet
+import ktx.collections.set
+import ktx.collections.toGdxArray
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     companion object {
-        const val SHM_FILE_SIZE = 52
+        const val CONSTANT_SIZE = 4
+        const val SIZE_PER_AIRCRAFT = 52
+        const val SIZE_PER_INSTRUCTION = 6
+        const val ADDITIONAL_PADDING = 2
+        const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
 
         const val FRAMES_PER_ACTION = 10 * 30
 
-        const val HDG_ACTION_MULTIPLIER = 1
+        const val HDG_ACTION_MULTIPLIER = 5
         const val ALT_ACTION_MULTIPLIER = 1000
         const val ALT_ACTION_ADDER = 2000
         const val SPD_ACTION_MULTIPLIER = 10
         const val SPD_ACTION_ADDER = 160
 
         const val LOOP_EXIT_MS = 15000
-
-        fun distPxFromLoc(acPos: Position, approach: Approach): Float {
-            val pos = approach.entity[Position.mapper]!!
-            val loc = approach.entity[Localizer.mapper]!!
-            val dir = approach.entity[Direction.mapper]!!.trackUnitVector
-            val gs = approach.entity[GlideSlope.mapper]
-
-            val offsetNm = gs?.offsetNm ?: 0f
-            dir.setLength((nmToPx(1) - nmToPx(offsetNm)))
-            val startPos = Vector2(pos.x, pos.y)
-            startPos.plusAssign(dir)
-            val endPos = Vector2(startPos)
-            dir.setLength(nmToPx(loc.maxDistNm.toInt()))
-            endPos.plusAssign(dir)
-
-            return distPxFromPolygon(floatArrayOf(startPos.x, startPos.y, endPos.x, endPos.y), acPos.x, acPos.y)
-        }
     }
 
     var framesToAction = FRAMES_PER_ACTION
@@ -74,17 +65,30 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     var loopExited = false
     var resetNeeded = false
     var terminating = false
-    var prevLocDistPx = Float.MIN_VALUE
-    var prevAltFt = 20000f
+    val acPrevLocDistPx: GdxArrayMap<String, Float> = GdxArrayMap()
+    val acPrevAlt: GdxArrayMap<String, Float> = GdxArrayMap()
+    val acOnLoc: HashSet<String> = HashSet()
+    val agentIdToAircraft = Array<Entity?>(MAX_RL_AIRCRAFT) { null }
+    val agentClearanceChangePenalty = Array(MAX_RL_AIRCRAFT) { 0f }
+    var assignedCallsigns = GdxSet<String>()
     var targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
     }
-    var clearancesChangePenalty = 0f
+    private var spawnedInCurrentSession = 0
+//    var clearancesChangePenalty = 0f
 
     val conflictManager = ConflictManager()
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
+
+    override fun getEpisodeSpawnCount(): Int {
+        return spawnedInCurrentSession
+    }
+
+    override fun incrementSpawnCount() {
+        spawnedInCurrentSession++
+    }
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
         if (loopExited) return
@@ -99,19 +103,22 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
         if (sharedMemoryIPC.needsResetSim()) {
 //            FileLog.info("$envName PythonGymnasiumBridge", "Resetting state")
             resetNeeded = false
-            var needsNewLocation = true
-            while (needsNewLocation) {
-                val newAircraft = resetAircraft()
-                needsNewLocation = writeState(newAircraft)
-            }
-            val newAc = aircraft.getValueAt(0).entity
-            prevLocDistPx = distPxFromLoc(newAc[Position.mapper]!!, targetApproach.value)
-            prevAltFt = newAc[Altitude.mapper]!!.altitudeFt
+
+            // Reset the agent ID to aircraft mapping
+            for (i in 0 until agentIdToAircraft.size) agentIdToAircraft[i] = null
+
+            assignedCallsigns.clear()
+            resetAircraft()
+            spawnedInCurrentSession = aircraft.size
+            acOnLoc.clear()
+            writeState(aircraft)
+
             terminating = false
             sharedMemoryIPC.signalActionReady()
 //            println("${System.currentTimeMillis()} Reset action ready")
 
             // Wait for action done event before continuing simulation
+//            println("${System.currentTimeMillis()} Waiting action done (reset)")
             if (!sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
                 // Assume RL program has exited, stop bridge loop
                 FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited")
@@ -134,6 +141,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 //            println("${System.currentTimeMillis()} Set action ready")
 
             if (sharedMemoryIPC.needsResetAfterStep() || terminating) {
+//                println("$envName Reset requested after step: terminating is $terminating")
                 // Reset requested, exit update so won't get blocked
                 resetNeeded = true
                 terminating = false
@@ -153,7 +161,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
             framesToAction = FRAMES_PER_ACTION
         }
 
-        if (framesToAction < -500000) {
+        if (framesToAction < -100000000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"
@@ -163,98 +171,174 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     }
 
     private fun writeState(aircraft: GdxArrayMap<String, Aircraft>): Boolean {
-        if (aircraft.size != 1) {
-            throw IllegalArgumentException("$envName Aircraft must have exactly 1 item, got ${aircraft.size} instead")
+        if (aircraft.size > MAX_RL_AIRCRAFT) {
+            throw IllegalArgumentException("$envName Aircraft must have <= $MAX_RL_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
-        val targetAircraft = aircraft.getValueAt(0).entity
+        val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT) {
+            // Conflict check
+            conflictManager.getConflictsRL(ImmutableArray(aircraft.values().map { it.entity }.toGdxArray()))
+        } else GdxArray()
+//        val shouldTerminate = (if (conflicts.size > 0) 1 else 0).byte
+        val shouldTerminate = 0.byte
+        var nonTerminateCount = 0
 
-        // Proceed flag
+        // Assign agent IDs to newly spawned aircraft, if any
+        for (i in 0 until aircraft.size) {
+            val ac = aircraft.getValueAt(i).entity
+            val callsign = ac[AircraftInfo.mapper]!!.icaoCallsign
+            if (assignedCallsigns.contains(callsign)) continue
+
+            if (agentIdToAircraft[assignedCallsigns.size] != null) throw IllegalStateException("$envName: Expected agent ${assignedCallsigns.size} to be null before assignment")
+            agentIdToAircraft[assignedCallsigns.size] = ac
+            assignedCallsigns.add(callsign)
+        }
+
+        val stateArray = ByteBuffer.allocate(MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT).order(ByteOrder.nativeOrder())
+        val acToRemove = GdxArray<Int>()
+        for (currAgentID in 0 until agentIdToAircraft.size) {
+            val currAircraft = agentIdToAircraft[currAgentID]
+
+            if (currAircraft == null) {
+                stateArray.position(stateArray.position() + SIZE_PER_AIRCRAFT - 3)
+                stateArray.put(0)  // Aircraft does not exist
+                stateArray.put(0)  // Termination flag (NA)
+            } else {
+                // Aircraft x, y, alt, gs, track
+                val currAcInfo = currAircraft[AircraftInfo.mapper]!!
+                val currPos = currAircraft[Position.mapper]!!
+                val currAlt = currAircraft[Altitude.mapper]!!
+                val currIas = currAircraft[IndicatedAirSpeed.mapper]!!
+                val currSpd = currAircraft[Speed.mapper]!!
+                val currGroundTrack = currAircraft[GroundTrack.mapper]!!
+                val currHdg = modulateHeading(convertWorldAndRenderDeg(currGroundTrack.trackVectorPxps.angleDeg()))
+                val currPrevClearance = getLatestClearanceState(currAircraft)!!
+                val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper)) 1.byte else 0.byte
+                var acReward = -agentClearanceChangePenalty[currAgentID]
+                agentClearanceChangePenalty[currAgentID] = 0f
+                var currShouldTerminate = shouldTerminate
+                var ignorePositiveRewards = false
+
+                if (currLocCap == 1.byte) {
+                    // If aircraft has previously captured LOC, ignore its rewards
+                    if (acOnLoc.contains(currAcInfo.icaoCallsign)) ignorePositiveRewards = true
+                    else {
+                        // Lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
+                        acReward += LOC_CAP_REWARD
+                        acOnLoc.add(currAcInfo.icaoCallsign)
+                        acPrevLocDistPx.removeKey(currAcInfo.icaoCallsign)
+                        acPrevAlt.removeKey(currAcInfo.icaoCallsign)
+//                        FileLog.info("$envName PythonGymnasiumBridge", "${currAcInfo.icaoCallsign} captured LOC")
+
+                        if (SIMPLIFIED_LOC_CAP) {
+                            acToRemove.add(currAgentID)
+                            currShouldTerminate = 1
+                        }
+                    }
+                } else {
+                    acOnLoc.remove(currAcInfo.icaoCallsign)
+                }
+
+                if (!ignorePositiveRewards) {
+                    // Reward from previous action
+                    // Constant per time step penalty + decrease in distance towards LOC line segment (x4 penalty if distance increases)
+                    // + decrease in altitude (x4 penalty if altitude increases)
+                    val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
+                    if (acPrevLocDistPx.containsKey(currAcInfo.icaoCallsign)) {
+                        val deltaDist = acPrevLocDistPx[currAcInfo.icaoCallsign] - newLocDistPx
+                        val distReward = if (deltaDist >= 0) deltaDist / 1600 else deltaDist / 400
+                        val deltaAlt = acPrevAlt[currAcInfo.icaoCallsign] - currAlt.altitudeFt
+                        val altReward = if (deltaAlt >= 0) deltaAlt / 12000 else deltaAlt / 3000
+                        acReward += distReward + altReward - PER_STEP_PENALTY
+                    }
+
+                    acPrevLocDistPx[currAcInfo.icaoCallsign] = newLocDistPx
+                    acPrevAlt[currAcInfo.icaoCallsign] = currAlt.altitudeFt
+                }
+
+                // Assign negative reward for conflict involving this aircraft
+                if (conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft } != null) {
+                    acReward -= CONFLICT_PENALTY
+                }
+                // TODO Smaller negative reward for other aircraft?
+
+                // Discourage aircraft from loitering too long close to LOC
+//                if (newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) totalAcReward -= 0.06f
+
+                // Reward, ICAO type, x, y, alt, ias, track, track rate, vertical speed, cleared alt, cleared hdg, cleared IAS, LOC cap, mask
+                stateArray.putFloat(acReward)
+                for (c in currAcInfo.icaoType) {
+                    stateArray.put(c.code.toByte())
+                }
+                stateArray.putFloat(currPos.x)
+                stateArray.putFloat(currPos.y)
+                stateArray.putFloat(currAlt.altitudeFt)
+                stateArray.putFloat(currIas.iasKt)
+                stateArray.putFloat(currHdg)
+                stateArray.putFloat(currSpd.angularSpdDps)
+                stateArray.putFloat(currSpd.vertSpdFpm)
+                stateArray.putInt(currPrevClearance.clearedAlt)
+                stateArray.putInt(currPrevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
+                stateArray.putInt(currPrevClearance.clearedIas.toInt())
+                stateArray.put(currLocCap)
+                stateArray.put(1)  // Aircraft exists
+                stateArray.put(currShouldTerminate)
+                nonTerminateCount += 1 - currShouldTerminate
+            }
+
+            stateArray.put(currAgentID.byte)
+        }
+        sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)
+
+        // Action waiting flag
         sharedMemoryIPC.setByte(0, 1)
 
-        // Reward from previous action
-        // Constant -0.01 per time step + decrease in distance towards LOC line segment +
-        // lump sum reward on LOC capture TODO depending on intercept angle (lower angle = higher reward)?
-        val newLocDistPx = distPxFromLoc(targetAircraft[Position.mapper]!!, targetApproach.value)
-        val pos = targetAircraft[Position.mapper]!!
-        val alt = targetAircraft[Altitude.mapper]!!
-        val spd = targetAircraft[Speed.mapper]!!
-        val prevClearance = getLatestClearanceState(targetAircraft)!!
-        val distReward = (prevLocDistPx - newLocDistPx) / 1600
-        val altReward = (prevAltFt - alt.altitudeFt) / 12000
-        var reward = distReward + altReward - 0.03f - clearancesChangePenalty
-        // Discourage aircraft from loitering too long close to LOC
-        if (newLocDistPx < nmToPx(4) && alt.altitudeFt <= 6010) reward -= 0.06f
-        clearancesChangePenalty = 0f
-        prevLocDistPx = newLocDistPx
-        prevAltFt = alt.altitudeFt
-        val isLocCap: Byte = when {
-            LOC_CAP_CHECK -> if (targetAircraft.has(LocalizerCaptured.mapper)) 1 else 0
-            else -> if (newLocDistPx < 15) 1 else 0
+        for (agentId in acToRemove) {
+            despawnAircraft(agentIdToAircraft[agentId]!!)
+            agentIdToAircraft[agentId] = null
         }
-        var shouldTerminate: Byte = 0
-        if (isLocCap == 1.byte) {
-            reward += 1
-            shouldTerminate = 1
-        }
-        val conflicts = conflictManager.getConflictCountRL(ImmutableArray(GdxArray(arrayOf(targetAircraft))))
-        if (conflicts > 0) {
-            reward -= 1
-            shouldTerminate = 1
-        }
-        sharedMemoryIPC.setFloat(4, reward)
+        acToRemove.clear()
 
-        // Simulation terminated (LOC captured / conflict encountered)
-        sharedMemoryIPC.setByte(1, shouldTerminate)
-
-        // Aircraft x, y, alt, gs, track
-        val groundTrack = targetAircraft[GroundTrack.mapper]!!
-        val currHdg = modulateHeading(convertWorldAndRenderDeg(groundTrack.trackVectorPxps.angleDeg()))
-        sharedMemoryIPC.setFloat(12, pos.x)
-        sharedMemoryIPC.setFloat(16, pos.y)
-        sharedMemoryIPC.setFloat(20, alt.altitudeFt)
-        sharedMemoryIPC.setFloat(24, groundTrack.trackVectorPxps.len().let { pxpsToKt(it) })
-        sharedMemoryIPC.setFloat(28, currHdg)
-        sharedMemoryIPC.setFloat(32, spd.angularSpdDps)
-        sharedMemoryIPC.setFloat(36, spd.vertSpdFpm)
-        sharedMemoryIPC.setInt(40, prevClearance.clearedAlt)
-        sharedMemoryIPC.setInt(44, prevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
-        sharedMemoryIPC.setInt(48, prevClearance.clearedIas.toInt())
-
-        return shouldTerminate == 1.byte
+        return shouldTerminate == 1.byte || nonTerminateCount == 0
     }
 
     private fun performAction(aircraft: GdxArrayMap<String, Aircraft>) {
-        if (aircraft.size != 1) {
-            throw IllegalArgumentException("$envName Aircraft must have exactly 1 item, got ${aircraft.size} instead")
+        if (aircraft.size > MAX_RL_AIRCRAFT) {
+            throw IllegalArgumentException("$envName Aircraft must have <= $MAX_RL_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
-        val targetAircraft = aircraft.getValueAt(0).entity
-
-        val bytes = sharedMemoryIPC.readBytes(0, 4)
+        val bytes = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
         val proceedFlag = bytes[0]
         if (proceedFlag.toInt() != 1) throw IllegalStateException("$envName ProceedFlag must be 1")
-        sharedMemoryIPC.setByte(0, 0) // Reset proceed flag
+        // Reset action waiting flag
+        sharedMemoryIPC.setByte(0, 0)
 //        println("${System.currentTimeMillis()} Proceed unset")
 
-        val clearedHdg = (sharedMemoryIPC.readShort(8) * HDG_ACTION_MULTIPLIER).toShort()
-        val clearedAlt = bytes[2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
-        val clearedIas = (bytes[3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
+//        println("Selected aircraft: $acIndex; aircraft count: ${aircraft.size}")
 
-        val currHdg = convertWorldAndRenderDeg(targetAircraft[Direction.mapper]!!.trackUnitVector.angleDeg()) + MAG_HDG_DEV
-//        val currAlt = targetAircraft[Altitude.mapper]!!.altitudeFt
+        for (currAgentID in 0 until agentIdToAircraft.size) {
+            val instructionStartOffset = CONSTANT_SIZE + currAgentID * SIZE_PER_INSTRUCTION
 
-        val prevClearance = getLatestClearanceState(targetAircraft)!!
-        clearancesChangePenalty = (
-//            ((prevClearance.vectorHdg?.let {
-//                (findDeltaHeading(it.toFloat(), clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT) > 2).toInt() * 0.15f
-//            }) ?: 0f) +
-            (clearedHdg != prevClearance.vectorHdg && abs(findDeltaHeading(currHdg, clearedHdg.toFloat(), CommandTarget.TURN_DEFAULT)) > 2).toInt() * 0.15f +
-            (clearedAlt != prevClearance.clearedAlt).toInt() * 0.15f +
-            (clearedIas != prevClearance.clearedIas).toInt() * 0.15f
-        )
-        val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
-        addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
+            val targetAircraft = agentIdToAircraft[currAgentID] ?: continue
+
+            if (bytes[instructionStartOffset + 4] != 1.byte || targetAircraft.has(LocalizerCaptured.mapper)) continue  // No clearance required
+            val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()
+            val clearedAlt = bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
+            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
+
+            val prevClearance = getLatestClearanceState(targetAircraft)!!
+            val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas
+
+            if (changed) {
+                val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
+                addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
+
+                val clearanceChangePenalty = (if (prevClearance.vectorHdg != clearedHdg) CLEARANCE_CHANGE_PENALTY else 0f) +
+                        (if (prevClearance.clearedAlt != clearedAlt) CLEARANCE_CHANGE_PENALTY else 0f) +
+                        (if (prevClearance.clearedIas != clearedIas) CLEARANCE_CHANGE_PENALTY else 0f)
+                agentClearanceChangePenalty[currAgentID] = clearanceChangePenalty
+            }
+        }
     }
 }
 

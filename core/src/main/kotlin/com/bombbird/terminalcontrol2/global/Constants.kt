@@ -211,5 +211,21 @@ const val MULTIPLAYER_PUBLIC_CLIENT = "Public multiplayer (client)"
 const val DISCORD_UPDATE_INTERVAL_S = 10f
 
 /** Training options */
-const val LOC_CAP_CHECK = false
+const val DISABLE_SAVES = true
+const val RANDOM_SPAWN_LOCATION = false
+const val WAIT_BETWEEN_SPAWNS = true
+const val SPAWN_INTERVAL_S = 60f  // Ignored if WAIT_BETWEEN_SPAWNS is false
+const val SIMPLIFIED_LOC_CAP = false
+const val LOC_CAP_MAX_INTERCEPT_ANGLE = 45
 const val LOC_CAP_IAS_CHECK = false
+const val AIRCRAFT_TO_SPAWN = 15
+const val MAX_RL_AIRCRAFT = 15
+const val DISABLE_GO_AROUNDS = true
+const val CHECK_AIRCRAFT_CONFLICT = false
+const val CHECK_MVA_CONFLICT = true
+const val CONFLICT_PENALTY = 8
+const val CLEARANCE_CHANGE_PENALTY = 0.03f
+const val PER_STEP_PENALTY = 0.04f
+const val LOC_CAP_REWARD = 4
+const val MAX_SPAWN_DIST_NM = 60
+const val MIN_SPAWN_DIST_NM = 5

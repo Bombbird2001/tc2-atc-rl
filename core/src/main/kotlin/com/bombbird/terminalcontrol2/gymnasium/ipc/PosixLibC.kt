@@ -14,13 +14,16 @@ object PosixLibC: Library {
     }
 
     external fun shm_open(name: String, oflag: Int, mode: Int): Int
+    external fun close(fd: Int): Int
     external fun mmap(addr: Pointer?, length: Long, prot: Int, flags: Int, fd: Int, offset: Long): Pointer
+    external fun munmap(addr: Pointer?, length: Long): Int
 
     external fun sem_open(name: String, oflag: Int): Pointer
     external fun sem_wait(sem: Pointer): Int
     external fun sem_trywait(sem: Pointer): Int
     external fun sem_timedwait(sem: Pointer, absTimeout: Timespec): Int
     external fun sem_post(sem: Pointer): Int
+    external fun sem_close(sem: Pointer)
 }
 
 object MacOSLibC: Library {
@@ -29,10 +32,13 @@ object MacOSLibC: Library {
     }
 
     external fun shm_open(name: String, oflag: Int, mode: Int): Int
+    external fun close(fd: Int): Int
     external fun mmap(addr: Pointer?, length: Long, prot: Int, flags: Int, fd: Int, offset: Long): Pointer
+    external fun munmap(addr: Pointer?, length: Long): Int
 
     external fun sem_open(name: String, oflag: Int): Pointer
     external fun sem_wait(sem: Pointer): Int
     external fun sem_trywait(sem: Pointer): Int
     external fun sem_post(sem: Pointer): Int
+    external fun sem_close(sem: Pointer)
 }

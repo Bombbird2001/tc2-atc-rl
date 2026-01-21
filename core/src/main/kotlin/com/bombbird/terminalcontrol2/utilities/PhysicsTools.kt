@@ -662,12 +662,14 @@ fun calculateArrivalSpawnAltitude(aircraft: Entity, airport: Entity, origRoute: 
 
     // Take into account any STAR max altitude restrictions
     var prevMaxStarAlt: Int? = null
-    (aircraftRoute[0] as? Route.WaypointLeg)?.apply {
-        for (i in 0 until origRoute.size) (origRoute[i] as? Route.WaypointLeg)?.let { wpt ->
-            if (compareLegEquality(this, wpt)) return@apply // Once the current direct is reached, stop searching for max altitude restrictions
-            wpt.maxAltFt?.let { maxAlt ->
-                val prevMaxAlt = prevMaxStarAlt
-                if (prevMaxAlt == null || prevMaxAlt > maxAlt) prevMaxStarAlt = maxAlt
+    if (aircraftRoute.size > 0) {
+        (aircraftRoute[0] as? Route.WaypointLeg)?.apply {
+            for (i in 0 until origRoute.size) (origRoute[i] as? Route.WaypointLeg)?.let { wpt ->
+                if (compareLegEquality(this, wpt)) return@apply // Once the current direct is reached, stop searching for max altitude restrictions
+                wpt.maxAltFt?.let { maxAlt ->
+                    val prevMaxAlt = prevMaxStarAlt
+                    if (prevMaxAlt == null || prevMaxAlt > maxAlt) prevMaxStarAlt = maxAlt
+                }
             }
         }
     }

@@ -1,13 +1,15 @@
 package com.bombbird.terminalcontrol2.gymnasium.ipc
 
+import java.nio.ByteBuffer
+
 interface SharedMemoryIPC {
     companion object {
-        const val SHM_FILE_PREFIX = "ATCRLSharedMem"
-        const val TRAINER_INITIALIZED = "ATCRLTrainerInit"
-        const val RESET_PREFIX = "ATCRLResetEvent"
-        const val ACTION_READY_PREFIX = "ATCRLActionReadyEvent"
-        const val ACTION_DONE_PREFIX = "ATCRLActionDoneEvent"
-        const val RESET_AFTER_STEP_PREFIX = "ATCRLResetAfterEvent"
+        const val SHM_FILE_PREFIX = "ATCSharedMem"
+        const val TRAINER_INITIALIZED = "ATCTrainerInit"
+        const val RESET_PREFIX = "ATCResetEvent"
+        const val ACTION_READY_PREFIX = "ATCActionReadyEvent"
+        const val ACTION_DONE_PREFIX = "ATCActionDoneEvent"
+        const val RESET_AFTER_STEP_PREFIX = "ATCResetAfterEvent"
     }
 
     fun waitForTrainerInitialized()
@@ -28,6 +30,8 @@ interface SharedMemoryIPC {
 
     fun setByte(offset: Int, byte: Byte)
 
+    fun copyByteArray(offset: Int, source: ByteBuffer)
+
     fun setFloat(offset: Int, float: Float)
 
     fun setInt(offset: Int, int: Int)
@@ -35,6 +39,8 @@ interface SharedMemoryIPC {
     fun readBytes(offset: Int, bytes: Int): ByteArray
 
     fun readShort(offset: Int): Short
+
+    fun shutdown()
 }
 
 object SharedMemoryIPCFactory {

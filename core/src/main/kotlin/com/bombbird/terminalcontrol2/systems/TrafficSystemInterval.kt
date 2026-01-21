@@ -8,8 +8,11 @@ import com.badlogic.gdx.utils.ArrayMap.Entries
 import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
+import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.GAME
+import com.bombbird.terminalcontrol2.global.SPAWN_INTERVAL_S
 import com.bombbird.terminalcontrol2.global.THUNDERSTORM_TAKEOFF_PROTECTION_DIST_NM
+import com.bombbird.terminalcontrol2.global.WAIT_BETWEEN_SPAWNS
 import com.bombbird.terminalcontrol2.traffic.*
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.utilities.*
@@ -80,19 +83,22 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                         val arptEntity = airportArrivalStats[i]
                         if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
+                        arptArrStats.targetTrafficValue = AIRCRAFT_TO_SPAWN
                         arptArrStats.arrivalSpawnTimer -= interval
-                        if (arptArrStats.arrivalSpawnTimer > 0) continue
+                        if (arptArrStats.arrivalSpawnTimer > 0 && WAIT_BETWEEN_SPAWNS) continue
 
                         val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: continue
-                        val arrivalCount = arrivalFamilyEntities.getEntities().filter {
-                            it[FlightType.mapper]?.type == FlightType.ARRIVAL && it[ArrivalAirport.mapper]?.arptId == arptId
-                        }.size
-                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
-                        arptArrStats.arrivalSpawnTimer = 90f - 10 * (arptArrStats.targetTrafficValue - arrivalCount)
-                        arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
-                        if (arrivalCount >= arptArrStats.targetTrafficValue) continue
+                        if (arptId != 0.byte) continue
+//                        val arrivalCount = arrivalFamilyEntities.getEntities().filter {
+//                            it[FlightType.mapper]?.type == FlightType.ARRIVAL && it[ArrivalAirport.mapper]?.arptId == arptId
+//                        }.size
+                        // 60 sec spawn interval
+                        arptArrStats.arrivalSpawnTimer = SPAWN_INTERVAL_S
+//                        arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
+                        if (pythonGymBridge.getEpisodeSpawnCount() >= arptArrStats.targetTrafficValue) continue
                         createRandomArrivalForAirport(arptEntity, this)
-                        FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")
+                        pythonGymBridge.incrementSpawnCount()
+//                        FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")
                     }
                 }
                 TrafficMode.FLOW_RATE -> {

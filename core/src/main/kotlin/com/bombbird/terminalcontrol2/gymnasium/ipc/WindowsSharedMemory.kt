@@ -3,6 +3,7 @@ package com.bombbird.terminalcontrol2.gymnasium.ipc
 import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.Kernel32
 import com.sun.jna.platform.win32.WinNT.HANDLE
+import java.nio.ByteBuffer
 
 class WindowsSharedMemory(envId: String, fileSizeBytes: Int): SharedMemoryIPC {
     companion object {
@@ -62,6 +63,11 @@ class WindowsSharedMemory(envId: String, fileSizeBytes: Int): SharedMemoryIPC {
         buffer.setByte(offset.toLong(), byte)
     }
 
+    override fun copyByteArray(offset: Int, source: ByteBuffer) {
+        source.position(0)
+        buffer.write(offset.toLong(), source.array(), 0, source.remaining())
+    }
+
     override fun setFloat(offset: Int, float: Float) {
         buffer.setFloat(offset.toLong(), float)
     }
@@ -76,5 +82,9 @@ class WindowsSharedMemory(envId: String, fileSizeBytes: Int): SharedMemoryIPC {
 
     override fun readShort(offset: Int): Short {
         return buffer.getShort(offset.toLong())
+    }
+
+    override fun shutdown() {
+        // TODO Cleanup
     }
 }

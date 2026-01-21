@@ -254,7 +254,7 @@ class GameServer private constructor(
     // var timeCounter = 0f
     // var frames = 0
     private var startTime = -1L
-    private val pythonGymBridge: GymnasiumBridge
+    val pythonGymBridge: GymnasiumBridge
     private val envName = "env[$envId]"
 
     private val baselineAI = HoldAndDispatch(this)
@@ -359,7 +359,7 @@ class GameServer private constructor(
                 loopRunning.set(true)
                 gameLoop()
                 cleanUp()
-                if (!isHeadlessTraining) saveGame(this)
+                if (!isHeadlessTraining && !DISABLE_SAVES) saveGame(this)
             } catch (e: Exception) {
                 e.printStackTrace()
                 HttpRequest.sendCrashReport(e, "GameServer", getMultiplayerType())
@@ -691,7 +691,7 @@ class GameServer private constructor(
                 // Check if autosave time is up
                 autosaveTime += (currMs - prevMs).toInt()
                 if (autosaveTime > AUTOSAVE_INTERVAL_MIN * 60 * 1000) {
-                    if (!isHeadlessTraining) saveGame(this)
+                    if (!isHeadlessTraining && !DISABLE_SAVES) saveGame(this)
                     autosaveTime -= AUTOSAVE_INTERVAL_MIN * 60 * 1000
                 }
 
@@ -710,7 +710,8 @@ class GameServer private constructor(
 
             prevMs = currMs
 
-            if (slowMode) for (i in 0..2000000000) {}
+//            if (slowMode) for (i in 0..2000000000) {}
+            if (slowMode) Thread.sleep(1)
 
 //            if (currMs % 100 == 0L) println("FPS: ${frameCount * 1000 / frametimeSum}")
         }
@@ -734,15 +735,17 @@ class GameServer private constructor(
 
         pythonGymBridge.update(aircraft) {
             // Reset function - despawn current aircraft, create new aircraft
-            for (i in 0 until aircraft.size) {
+            for (i in aircraft.size - 1 downTo 0) {
                 val ac = aircraft.getValueAt(i)
                 despawnAircraft(ac.entity)
             }
             aircraft.clear()
 
-            val airport = airports[0].entity
-            createArrival("SHIBA1", "B77W", airport, this)
-//            FileLog.info("$envName GameServer", "${aircraft.size} aircraft")
+            val airport = airports.getValueAt(0).entity
+
+            // Force spawn 1 aircraft on start
+            createRandomArrivalForAirport(airport, this)
+            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
 
             return@update aircraft
         }

@@ -101,8 +101,8 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
 //        val spawnTrack = MathUtils.random(360f)
 //        val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
 //        val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-        val offsetX = -MathUtils.sinDeg(23f) * nmToPx(12.5f)
-        val offsetY = -MathUtils.cosDeg(23f) * nmToPx(12.5f)
+        val offsetX = 0 //-MathUtils.sinDeg(23f) * nmToPx(12.5f)
+        val offsetY = 0 //-MathUtils.cosDeg(23f) * nmToPx(12.5f)
         spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
     } else {
         spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)

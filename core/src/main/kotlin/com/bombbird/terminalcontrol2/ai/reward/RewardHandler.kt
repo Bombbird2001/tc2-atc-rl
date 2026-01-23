@@ -4,6 +4,7 @@ import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
+import com.bombbird.terminalcontrol2.components.LandingRoll
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
@@ -62,7 +63,7 @@ class RewardHandler {
             val currPos = currAircraft[Position.mapper]!!
             val currAlt = currAircraft[Altitude.mapper]!!
             val currClearance = getLatestClearanceState(currAircraft)!!
-            val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper)) 1.byte else 0.byte
+            val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper) || currAircraft.has(LandingRoll.mapper)) 1.byte else 0.byte
 
             var acReward = acPrevClearance[i]?.let { prevClearance ->
                 val clearanceChangePenalty = (if (prevClearance.vectorHdg != currClearance.vectorHdg) CLEARANCE_CHANGE_PENALTY else 0f) +

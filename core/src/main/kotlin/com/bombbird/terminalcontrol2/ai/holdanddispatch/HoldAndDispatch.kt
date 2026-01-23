@@ -55,6 +55,7 @@ class HoldAndDispatch(private val gs: GameServer) {
 
     private var rewardCounter = REWARD_INTERVAL
     private var episodeCounter = -1
+    private var episodeSteps = 0
     private val rewardHandler = RewardHandler()
 
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
@@ -105,9 +106,16 @@ class HoldAndDispatch(private val gs: GameServer) {
         spawnCount++
     }
 
+    fun despawnAircraft(aircraft: Entity) {
+        val acIndex = acArray.indexOf(aircraft)
+        if (acIndex == -1) return
+        acArray[acIndex] = null
+    }
+
     fun reset() {
         spawnCount = 1
         episodeCounter++
+        episodeSteps = 0
         rewardCounter = REWARD_INTERVAL
         rewardHandler.rewardReset()
         holdingTimeQueue.clear()
@@ -115,7 +123,12 @@ class HoldAndDispatch(private val gs: GameServer) {
         CsvTools.writeToRewards(episodeCounter, rewardHandler.rewardStep(acArray))
     }
 
-    fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float) {
+    fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, resetEpisode: () -> Unit) {
+        if (aircraft.isEmpty || episodeSteps > 300) {
+            resetEpisode()
+            reset()
+        }
+
         var holdCountChanged = false
 
         for (i in 0 until aircraft.size) {
@@ -273,6 +286,7 @@ class HoldAndDispatch(private val gs: GameServer) {
         if (rewardCounter < 0) {
             CsvTools.writeToRewards(episodeCounter, rewardHandler.rewardStep(acArray))
             rewardCounter = REWARD_INTERVAL
+            episodeSteps++
         }
     }
 

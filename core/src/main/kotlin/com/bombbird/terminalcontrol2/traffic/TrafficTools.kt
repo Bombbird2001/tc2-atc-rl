@@ -175,6 +175,7 @@ fun despawnAircraft(aircraft: Entity) {
         engine.getSystem<TrafficSystemInterval>().removeAircraftOnDespawn(aircraft) // Remove from conflict levels
         engine.getSystem<TrafficSystemInterval>().removeAircraftWakeZones(aircraft) // Remove wake zones
         it.sendAircraftDespawn(callsign) // Send removal data to all clients
+        it.baselineAI.despawnAircraft(aircraft)
     }
 }
 

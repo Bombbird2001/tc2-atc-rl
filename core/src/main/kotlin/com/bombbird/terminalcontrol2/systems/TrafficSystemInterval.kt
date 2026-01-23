@@ -66,6 +66,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
     override fun updateInterval() {
         GAME.gameServer?.apply {
             val airportArrivalStats = arrivalStatsFamilyEntities.getEntities()
+            trafficMode = TrafficMode.ARRIVALS_TO_CONTROL
             when (trafficMode) {
 //                TrafficMode.NORMAL -> {
 //                    // Arrival spawning timer - normal traffic mode only
@@ -95,30 +96,30 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                         // 60 sec spawn interval
                         arptArrStats.arrivalSpawnTimer = SPAWN_INTERVAL_S
 //                        arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
-                        if (pythonGymBridge.getEpisodeSpawnCount() >= arptArrStats.targetTrafficValue) continue
+                        if (baselineAI.spawnCount >= arptArrStats.targetTrafficValue) continue
                         createRandomArrivalForAirport(arptEntity, this)
-                        pythonGymBridge.incrementSpawnCount()
+                        baselineAI.incrementSpawnCount()
 //                        FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")
                     }
                 }
-                TrafficMode.FLOW_RATE -> {
-                    for (i in 0 until airportArrivalStats.size()) {
-                        val arptEntity = airportArrivalStats[i]
-                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
-                        if (arptEntity.has(ArrivalClosed.mapper)) continue
-                        val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.arrivalSpawnTimer -= interval
-                        if (arptArrStats.arrivalSpawnTimer > 0) continue
-
-                        arptArrStats.arrivalSpawnTimer = -arptArrStats.previousArrivalSpawnOffsetS // Subtract the additional (or less) time before spawning previous aircraft
-                        val defaultRate = 3600f / arptArrStats.targetTrafficValue // 3600sec = 1hr
-                        arptArrStats.arrivalSpawnTimer += defaultRate // Add the constant rate timing
-                        arptArrStats.previousArrivalSpawnOffsetS = defaultRate * MathUtils.random(-0.1f, 0.1f)
-                        arptArrStats.arrivalSpawnTimer += arptArrStats.previousArrivalSpawnOffsetS
-                        createRandomArrivalForAirport(arptEntity, this)
-                        FileLog.info("TrafficSystem", "Spawned arrival for airport ${arptEntity[AirportInfo.mapper]?.icaoCode}")
-                    }
-                }
+//                TrafficMode.FLOW_RATE -> {
+//                    for (i in 0 until airportArrivalStats.size()) {
+//                        val arptEntity = airportArrivalStats[i]
+//                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
+//                        if (arptEntity.has(ArrivalClosed.mapper)) continue
+//                        val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
+//                        arptArrStats.arrivalSpawnTimer -= interval
+//                        if (arptArrStats.arrivalSpawnTimer > 0) continue
+//
+//                        arptArrStats.arrivalSpawnTimer = -arptArrStats.previousArrivalSpawnOffsetS // Subtract the additional (or less) time before spawning previous aircraft
+//                        val defaultRate = 3600f / arptArrStats.targetTrafficValue // 3600sec = 1hr
+//                        arptArrStats.arrivalSpawnTimer += defaultRate // Add the constant rate timing
+//                        arptArrStats.previousArrivalSpawnOffsetS = defaultRate * MathUtils.random(-0.1f, 0.1f)
+//                        arptArrStats.arrivalSpawnTimer += arptArrStats.previousArrivalSpawnOffsetS
+//                        createRandomArrivalForAirport(arptEntity, this)
+//                        FileLog.info("TrafficSystem", "Spawned arrival for airport ${arptEntity[AirportInfo.mapper]?.icaoCode}")
+//                    }
+//                }
                 else -> FileLog.warn("TrafficSystem", "Invalid traffic mode $trafficMode")
             }
 

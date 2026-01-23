@@ -1,8 +1,10 @@
 package com.bombbird.terminalcontrol2.ai.holdanddispatch
 
+import com.badlogic.ashley.core.Entity
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.Queue
+import com.bombbird.terminalcontrol2.ai.reward.RewardHandler
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
@@ -17,6 +19,7 @@ import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.HALF_TURN_RATE_THRESHOLD_IAS
 import com.bombbird.terminalcontrol2.global.MAX_HIGH_SPD_ANGULAR_SPD
 import com.bombbird.terminalcontrol2.global.MAX_LOW_SPD_ANGULAR_SPD
+import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
@@ -46,7 +49,13 @@ import kotlin.math.sqrt
 class HoldAndDispatch(private val gs: GameServer) {
     companion object {
         var timePassed = 0f
+
+        const val REWARD_INTERVAL = 10 * 30
     }
+
+    private var rewardCounter = REWARD_INTERVAL
+    private var episodeCounter = -1
+    private val rewardHandler = RewardHandler()
 
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
     private val distNmFromFAF = 10
@@ -63,6 +72,9 @@ class HoldAndDispatch(private val gs: GameServer) {
         EXITED_HOLD
     }
 
+    var spawnCount = 0
+        private set
+    private val acArray: Array<Entity?> = Array(MAX_RL_AIRCRAFT) { null }
     private val acStates: GdxArrayMap<String, AIState> = GdxArrayMap()
     private val assignedStack: GdxArrayMap<String, HoldStack> = GdxArrayMap()
 
@@ -89,6 +101,20 @@ class HoldAndDispatch(private val gs: GameServer) {
         CsvTools.clearAllMetricLogFiles()
     }
 
+    fun incrementSpawnCount() {
+        spawnCount++
+    }
+
+    fun reset() {
+        spawnCount = 1
+        episodeCounter++
+        rewardCounter = REWARD_INTERVAL
+        rewardHandler.rewardReset()
+        holdingTimeQueue.clear()
+
+        CsvTools.writeToRewards(episodeCounter, rewardHandler.rewardStep(acArray))
+    }
+
     fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float) {
         var holdCountChanged = false
 
@@ -98,6 +124,9 @@ class HoldAndDispatch(private val gs: GameServer) {
 
             // New aircraft, no state
             if (!acStates.containsKey(callsign)) {
+                // Add to entity array
+                acArray[acArray.indexOf(null)] = ac.entity
+
                 val latestClearance = getLatestClearanceState(ac.entity)!!
                 if (latestClearance.route.size >= 2) {
                     // Lateral assignment (Hold stack)
@@ -239,6 +268,12 @@ class HoldAndDispatch(private val gs: GameServer) {
         }
 
         timePassed += deltaTime
+
+        rewardCounter--
+        if (rewardCounter < 0) {
+            CsvTools.writeToRewards(episodeCounter, rewardHandler.rewardStep(acArray))
+            rewardCounter = REWARD_INTERVAL
+        }
     }
 
     private fun updateHoldingTimeStatistics(newHoldingTime: Float) {

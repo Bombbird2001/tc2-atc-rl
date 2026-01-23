@@ -11,6 +11,7 @@ object CsvTools {
     private const val CONFLICT_FILE = "conflict.csv"
     private const val MVA_CONFLICT_FILE = "mva_restricted.csv"
     private const val ARRIVAL_RATE_FILE = "arrival_rate.csv"
+    private const val REWARDS_FILE = "rewards.csv"
 
     fun clearAllMetricLogFiles() {
         deleteFile(AVG_HOLD_TIME_FILE)
@@ -20,6 +21,7 @@ object CsvTools {
         deleteFile(CONFLICT_FILE)
         deleteFile(MVA_CONFLICT_FILE)
         deleteFile(ARRIVAL_RATE_FILE)
+        deleteFile(REWARDS_FILE)
     }
 
     private fun deleteFile(fileName: String) {
@@ -86,10 +88,18 @@ object CsvTools {
         )
     }
 
+    fun writeToRewards(episode: Int, rewards: Array<Float?>) {
+        writeToCsv(
+            REWARDS_FILE,
+            listOf("Episode", *rewards.withIndex().map { "ac${it.index}" }.toTypedArray()),
+            listOf(episode.toFloat(), *rewards)
+        )
+    }
+
     private fun writeToCsv(
         filePath: String,
         headers: List<String>,
-        data: List<Float>,
+        data: List<Float?>,
         append: Boolean = true
     ) {
         val file = File(filePath)

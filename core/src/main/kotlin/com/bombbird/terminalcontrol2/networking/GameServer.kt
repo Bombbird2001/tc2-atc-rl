@@ -257,7 +257,7 @@ class GameServer private constructor(
     val pythonGymBridge: GymnasiumBridge
     private val envName = "env[$envId]"
 
-    private val baselineAI = HoldAndDispatch(this)
+    val baselineAI = HoldAndDispatch(this)
 
     // Loading screen callbacks
     var serverStartedCallback: (() -> Unit)? = null
@@ -729,6 +729,16 @@ class GameServer private constructor(
         // Process pending runnables
         while (true) {
             pendingRunnablesQueue.poll()?.run() ?: break
+        }
+
+        if (aircraft.isEmpty) {
+            val airport = airports.getValueAt(0).entity
+
+            // Force spawn 1 aircraft on start
+            createRandomArrivalForAirport(airport, this)
+            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
+
+            baselineAI.reset()
         }
 
         baselineAI.update(aircraft, delta)

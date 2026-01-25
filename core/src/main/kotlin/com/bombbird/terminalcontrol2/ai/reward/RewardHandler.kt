@@ -25,7 +25,7 @@ import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.toGdxArray
 
-class RewardHandler {
+class RewardHandler(private val eval: Boolean) {
     private val conflictManager = ConflictManager()
 
     private val acOnLoc: Array<Boolean?> = Array(MAX_RL_AIRCRAFT) { null }
@@ -73,11 +73,11 @@ class RewardHandler {
             } ?: 0f
             acPrevClearance[i] = currClearance.copy()
 
-            var ignorePositiveRewards = false
+            var ignoreRewards = false
 
             if (currLocCap == 1.byte) {
                 // If aircraft has previously captured LOC, ignore its rewards
-                if (acOnLoc[i] == true) ignorePositiveRewards = true
+                if (acOnLoc[i] == true) ignoreRewards = true
                 else {
                     // Lump sum reward on LOC capture
                     acReward += LOC_CAP_REWARD
@@ -89,23 +89,27 @@ class RewardHandler {
                 acOnLoc[i] = false
             }
 
-            if (!ignorePositiveRewards) {
+            if (!ignoreRewards) {
                 // Reward from previous action
                 // Constant per time step penalty + decrease in distance towards LOC line segment (x4 penalty if distance increases)
                 // + decrease in altitude (x4 penalty if altitude increases)
-                val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
-                val prevLocDist = acPrevLocDistPx[i]
-                val prevAlt = acPrevAlt[i]
-                if (prevLocDist != null && prevAlt != null) {
-                    val deltaDist = prevLocDist - newLocDistPx
-                    val distReward = if (deltaDist >= 0) deltaDist / 1600 else deltaDist / 400
-                    val deltaAlt = prevAlt - currAlt.altitudeFt
-                    val altReward = if (deltaAlt >= 0) deltaAlt / 12000 else deltaAlt / 3000
-                    acReward += distReward + altReward - PER_STEP_PENALTY
+                if (!eval) {
+                    val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
+                    val prevLocDist = acPrevLocDistPx[i]
+                    val prevAlt = acPrevAlt[i]
+                    if (prevLocDist != null && prevAlt != null) {
+                        val deltaDist = prevLocDist - newLocDistPx
+                        val distReward = if (deltaDist >= 0) deltaDist / 1600 else deltaDist / 400
+                        val deltaAlt = prevAlt - currAlt.altitudeFt
+                        val altReward = if (deltaAlt >= 0) deltaAlt / 12000 else deltaAlt / 3000
+                        acReward += distReward + altReward
+                    }
+
+                    acPrevLocDistPx[i] = newLocDistPx
+                    acPrevAlt[i] = currAlt.altitudeFt
                 }
 
-                acPrevLocDistPx[i] = newLocDistPx
-                acPrevAlt[i] = currAlt.altitudeFt
+                acReward -= PER_STEP_PENALTY
             }
 
             // Assign negative reward for conflict involving this aircraft

@@ -50,7 +50,7 @@ import kotlin.math.min
 class GameServer private constructor(
     airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
     testMode: Boolean = false, envId: String = "0", private val isHeadlessTraining: Boolean = false,
-    private val slowMode: Boolean = false
+    private val slowMode: Boolean = false, private val rewardEval: Boolean = false
 ) {
     companion object {
         const val UPDATE_INTERVAL = 1000.0 / SERVER_UPDATE_RATE
@@ -72,8 +72,8 @@ class GameServer private constructor(
         const val STORMS_NIGHTMARE: Byte = 11
 
         /** Creates a new single-player mode game server object for ATC-RL headless training */
-        fun newRLGameServer(airportToHost: String, envId: String, slowMode: Boolean): GameServer {
-            return GameServer(airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true, slowMode = slowMode)
+        fun newRLGameServer(airportToHost: String, envId: String, evalMode: Boolean): GameServer {
+            return GameServer(airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true, slowMode = false, rewardEval = evalMode)
         }
 
         /**
@@ -81,7 +81,7 @@ class GameServer private constructor(
          * @return GameServer in single-player mode
          */
         fun newSinglePlayerGameServer(airportToHost: String): GameServer {
-            return GameServer(airportToHost, null, false, 1, envId = "0", slowMode = true)
+            return GameServer(airportToHost, null, false, 1, envId = "0", slowMode = true, rewardEval = true)
         }
 
         /**

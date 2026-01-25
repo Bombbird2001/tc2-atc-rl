@@ -56,7 +56,7 @@ class HoldAndDispatch(private val gs: GameServer) {
     private var rewardCounter = REWARD_INTERVAL
     private var episodeCounter = -1
     private var episodeSteps = 0
-    private val rewardHandler = RewardHandler()
+    private val rewardHandler = RewardHandler(true)
 
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
     private val distNmFromFAF = 10

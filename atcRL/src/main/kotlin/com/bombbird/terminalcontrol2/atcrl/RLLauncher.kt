@@ -13,10 +13,10 @@ import com.bombbird.terminalcontrol2.sounds.StubTextToSpeech
 
 /** Launches a headless application for the purposes of atc-rl. */
 fun main(args: Array<String>) {
-    if (args.size != 1) {
-        throw IllegalArgumentException("Must pass a string for envId")
+    if (args.size != 2) {
+        throw IllegalArgumentException("Must pass a string for envId and evalMode")
     }
     TerminalControl2(StubExternalFileHandler, StubTextToSpeech, StubDiscordHandler, StubAchievementHandler)
     Gdx.files = Lwjgl3Files()
-    GameServer.newRLGameServer("TCWS", args[0], false)
+    GameServer.newRLGameServer("TCWS", args[0], evalMode = args[1] == "1")
 }

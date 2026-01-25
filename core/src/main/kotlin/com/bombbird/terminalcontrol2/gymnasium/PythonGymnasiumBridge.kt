@@ -29,7 +29,7 @@ import ktx.collections.GdxSet
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
+class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     companion object {
         const val CONSTANT_SIZE = 4
         const val SIZE_PER_AIRCRAFT = 52
@@ -57,7 +57,7 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
     private val assignedCallsigns = GdxSet<String>()
     private var spawnedInCurrentSession = 0
 
-    private val rewardHandler = RewardHandler()
+    private val rewardHandler = RewardHandler(evalMode)
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
@@ -194,7 +194,13 @@ class PythonGymnasiumBridge(envId: String): GymnasiumBridge {
 
                 var currShouldTerminate = shouldTerminate
 
-                if (currLocCap == 1.byte && SIMPLIFIED_LOC_CAP) currShouldTerminate = 1
+                if (currLocCap == 1.byte && SIMPLIFIED_LOC_CAP) {
+                    currShouldTerminate = 1
+                    acToRemove.add(currAgentID)
+                } else if (!aircraft.containsKey(currAcInfo.icaoCallsign)) {
+                    currShouldTerminate = 1
+                    agentIdToAircraft[currAgentID] = null
+                }
 
                 // Reward, ICAO type, x, y, alt, ias, track, track rate, vertical speed, cleared alt, cleared hdg, cleared IAS, LOC cap, mask
                 stateArray.putFloat(acRewards[currAgentID]!!)

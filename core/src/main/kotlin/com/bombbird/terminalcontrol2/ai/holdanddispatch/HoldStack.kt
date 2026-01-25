@@ -115,4 +115,9 @@ class HoldStack(
     fun getHoldingCount(): Int {
         return inHoldStack.size
     }
+
+    fun reset() {
+        inHoldStack.clear()
+        pendingEnterHold.clear()
+    }
 }

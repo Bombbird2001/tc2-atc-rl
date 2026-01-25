@@ -119,6 +119,10 @@ class HoldAndDispatch(private val gs: GameServer) {
         rewardCounter = REWARD_INTERVAL
         rewardHandler.rewardReset()
         holdingTimeQueue.clear()
+        acStates.clear()
+        assignedStack.clear()
+        for (stack in holdingStacks) stack.reset()
+        for (i in 0 until acArray.size) acArray[i] = null
 
         CsvTools.writeToRewards(episodeCounter, rewardHandler.rewardStep(acArray))
     }

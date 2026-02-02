@@ -10,10 +10,11 @@ import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
-import com.bombbird.terminalcontrol2.global.CONFLICT_PENALTY
+import com.bombbird.terminalcontrol2.global.AIRCRAFT_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.LOC_CAP_REWARD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
+import com.bombbird.terminalcontrol2.global.MVA_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
@@ -113,8 +114,9 @@ class RewardHandler(private val eval: Boolean) {
             }
 
             // Assign negative reward for conflict involving this aircraft
-            if (conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft } != null) {
-                acReward -= CONFLICT_PENALTY
+            val conflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
+            if (conflict != null) {
+                acReward -= if (conflict.entity2 != null) AIRCRAFT_CONFLICT_PENALTY else MVA_CONFLICT_PENALTY
             }
             // TODO Smaller negative reward for all other aircraft?
 

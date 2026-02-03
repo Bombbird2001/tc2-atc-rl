@@ -170,7 +170,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             assignedCallsigns.add(callsign)
         }
 
-        val acRewards = rewardHandler.rewardStep(agentIdToAircraft)
+        val acRewards = rewardHandler.rewardStep(agentIdToAircraft, aircraft)
 
         val stateArray = ByteBuffer.allocate(MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT).order(ByteOrder.nativeOrder())
         val acToRemove = GdxArray<Int>()

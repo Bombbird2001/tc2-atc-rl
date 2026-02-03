@@ -45,7 +45,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
         const val SPD_ACTION_MULTIPLIER = 10
         const val SPD_ACTION_ADDER = 160
 
-        const val LOOP_EXIT_MS = 15000
+        const val LOOP_EXIT_MS = 60000
     }
 
     private var framesToAction = FRAMES_PER_ACTION

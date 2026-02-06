@@ -5,14 +5,17 @@ import com.badlogic.ashley.utils.ImmutableArray
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
-import com.bombbird.terminalcontrol2.components.LandingRoll
-import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_CONFLICT_PENALTY
+import com.bombbird.terminalcontrol2.global.DIST_SCORE_A
+import com.bombbird.terminalcontrol2.global.DIST_SCORE_B
+import com.bombbird.terminalcontrol2.global.DIST_SCORE_C
+import com.bombbird.terminalcontrol2.global.DIST_SCORE_M
+import com.bombbird.terminalcontrol2.global.DIST_SCORE_N
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.GOAL_REWARD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
@@ -21,13 +24,17 @@ import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
-import com.bombbird.terminalcontrol2.utilities.byte
+import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
+import com.bombbird.terminalcontrol2.utilities.pxToNm
 import ktx.ashley.get
-import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.toGdxArray
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.max
+import kotlin.math.min
 
 class RewardHandler(private val eval: Boolean) {
     private val conflictManager = ConflictManager()
@@ -56,6 +63,22 @@ class RewardHandler(private val eval: Boolean) {
             conflictManager.getConflictsRL(ImmutableArray(aircraft.filterNotNull().toGdxArray()))
         } else GdxArray()
 
+        // Proximity score = (c * e ^ (-a * (dist_nm_between - b))) * max(0, n - m * (altitude_ft_between / 1000)), where a, b, c, m, n are constants
+        val proximityRewardScores = Array(MAX_RL_AIRCRAFT) { 0f }
+        for (i in 0 until aircraft.size) {
+            val pos1 = aircraft[i]?.get(Position.mapper) ?: continue
+            val alt1 = aircraft[i]?.get(Altitude.mapper) ?: continue
+            for (j in i + 1 until aircraft.size) {
+                val pos2 = aircraft[j]?.get(Position.mapper) ?: continue
+                val alt2 = aircraft[j]?.get(Altitude.mapper) ?: continue
+                val distNm = pxToNm(calculateDistanceBetweenPoints(pos1.x, pos1.y, pos2.x, pos2.y))
+                val altFt = abs(alt1.altitudeFt - alt2.altitudeFt)
+                val proximityScore = min(DIST_SCORE_C * exp(DIST_SCORE_A * (distNm - DIST_SCORE_B)), 2f) * max(0f, DIST_SCORE_N - DIST_SCORE_M * (altFt / 1000))
+                proximityRewardScores[i] += proximityScore
+                proximityRewardScores[j] += proximityScore
+            }
+        }
+
         val rewards = Array<Float?>(MAX_RL_AIRCRAFT) { null }
 
         for (i in 0 until aircraft.size) {
@@ -82,9 +105,9 @@ class RewardHandler(private val eval: Boolean) {
             }
 
             // Reward from previous action
-            // Constant per time step penalty + decrease in distance towards LOC line segment (x4 penalty if distance increases)
-            // + decrease in altitude (x4 penalty if altitude increases)
             if (!eval) {
+                // Decrease in distance towards LOC line segment (x4 penalty if distance increases)
+                // + decrease in altitude (x4 penalty if altitude increases)
                 val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
                 val prevLocDist = acPrevLocDistPx[i]
                 val prevAlt = acPrevAlt[i]
@@ -98,8 +121,12 @@ class RewardHandler(private val eval: Boolean) {
 
                 acPrevLocDistPx[i] = newLocDistPx
                 acPrevAlt[i] = currAlt.altitudeFt
+
+                // Subtract sum of proximity score between this and every other aircraft
+                acReward -= proximityRewardScores[i]
             }
 
+            // Constant per time step penalty
             acReward -= PER_STEP_PENALTY
 
             // Assign negative reward for conflict involving this aircraft
@@ -107,7 +134,6 @@ class RewardHandler(private val eval: Boolean) {
             if (conflict != null) {
                 acReward -= if (conflict.entity2 != null) AIRCRAFT_CONFLICT_PENALTY else MVA_CONFLICT_PENALTY
             }
-            // TODO Smaller negative reward for all other aircraft?
 
             // Discourage aircraft from loitering too long close to LOC
 //                if (newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) totalAcReward -= 0.06f

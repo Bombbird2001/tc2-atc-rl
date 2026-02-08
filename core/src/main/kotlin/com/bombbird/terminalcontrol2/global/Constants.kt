@@ -236,3 +236,5 @@ const val DIST_SCORE_B = 5
 const val DIST_SCORE_C = 0.02f
 const val DIST_SCORE_M = 2
 const val DIST_SCORE_N = 3
+const val DIST_SCORE_V2_THRESHOLD_NM = 15
+const val DIST_SCORE_V2_PENALTY = 1f

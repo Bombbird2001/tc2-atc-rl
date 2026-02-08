@@ -16,6 +16,8 @@ import com.bombbird.terminalcontrol2.global.DIST_SCORE_B
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_C
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_M
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_N
+import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_PENALTY
+import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_THRESHOLD_NM
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.GOAL_REWARD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
@@ -73,7 +75,8 @@ class RewardHandler(private val eval: Boolean) {
                 val alt2 = aircraft[j]?.get(Altitude.mapper) ?: continue
                 val distNm = pxToNm(calculateDistanceBetweenPoints(pos1.x, pos1.y, pos2.x, pos2.y))
                 val altFt = abs(alt1.altitudeFt - alt2.altitudeFt)
-                val proximityScore = min(DIST_SCORE_C * exp(DIST_SCORE_A * (distNm - DIST_SCORE_B)), 2f) * max(0f, DIST_SCORE_N - DIST_SCORE_M * (altFt / 1000))
+//                val proximityScore = min(DIST_SCORE_C * exp(DIST_SCORE_A * (distNm - DIST_SCORE_B)), 2f) * max(0f, DIST_SCORE_N - DIST_SCORE_M * (altFt / 1000))
+                val proximityScore = if (distNm >= DIST_SCORE_V2_THRESHOLD_NM || altFt >= 975) 0f else DIST_SCORE_V2_PENALTY
                 proximityRewardScores[i] += proximityScore
                 proximityRewardScores[j] += proximityScore
             }

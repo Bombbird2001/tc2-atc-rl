@@ -223,6 +223,7 @@ const val AIRCRAFT_TO_SPAWN = 30
 const val MAX_RL_AIRCRAFT = 30
 const val DISABLE_GO_AROUNDS = true
 const val CHECK_AIRCRAFT_CONFLICT = true
+const val ENABLE_PROXIMITY_SCORE = false
 const val CHECK_MVA_CONFLICT = true
 const val MVA_CONFLICT_PENALTY = 8f
 const val AIRCRAFT_CONFLICT_PENALTY = 1f

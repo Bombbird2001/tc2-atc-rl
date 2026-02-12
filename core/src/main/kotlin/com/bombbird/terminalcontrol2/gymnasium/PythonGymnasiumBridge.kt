@@ -1,11 +1,13 @@
 package com.bombbird.terminalcontrol2.gymnasium
 
 import com.badlogic.ashley.core.Entity
+import com.badlogic.gdx.math.MathUtils
 import com.bombbird.terminalcontrol2.ai.reward.RewardHandler
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.GroundTrack
 import com.bombbird.terminalcontrol2.components.IndicatedAirSpeed
+import com.bombbird.terminalcontrol2.components.LandingRoll
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
@@ -23,11 +25,13 @@ import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.modulateHeading
 import ktx.ashley.get
 import ktx.ashley.has
+import ktx.ashley.hasNot
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.GdxSet
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.roundToInt
 
 class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     companion object {
@@ -259,11 +263,41 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             val targetAircraft = agentIdToAircraft[currAgentID] ?: continue
 
             if (bytes[instructionStartOffset + 4] != 1.byte || targetAircraft.has(LocalizerCaptured.mapper)) continue  // No clearance required
-            val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()
-            val clearedAlt = bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
-            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
+            if (targetAircraft.has(LocalizerCaptured.mapper) || targetAircraft.has(LandingRoll.mapper)) continue
 
             val prevClearance = getLatestClearanceState(targetAircraft)!!
+            val prevHdg = prevClearance.vectorHdg ?: throw NullPointerException("$prevClearance, ${targetAircraft[Altitude.mapper]?.altitudeFt} ${targetAircraft[Position.mapper]?.x} ${targetAircraft[Position.mapper]?.y}")
+            val prevAlt = prevClearance.clearedAlt
+            val prevIas = prevClearance.clearedIas
+
+            val deltaHdg = when (val opt = sharedMemoryIPC.readShort(instructionStartOffset).toInt()) {
+                0 -> -45f
+                1 -> -10f
+                2 -> 0f
+                3 -> 10f
+                4 -> 45f
+                else -> throw IllegalArgumentException("Unexpected hdg action $opt")
+            }
+            val deltaAlt = when (val opt = bytes[instructionStartOffset + 2].toInt()) {
+                0 -> -3000
+                1 -> -1000
+                2 -> 0
+                3 -> 1000
+                4 -> 3000
+                else -> throw IllegalArgumentException("Unexpected alt action $opt")
+            }
+            val deltaIas = when (val opt = bytes[instructionStartOffset + 3].toInt()) {
+                0 -> -30
+                1 -> -10
+                2 -> 0
+                3 -> 10
+                4 -> 30
+                else -> throw IllegalArgumentException("Unexpected ias action $opt")
+            }
+
+            val clearedHdg = modulateHeading(prevHdg + deltaHdg).roundToInt().toShort()
+            val clearedAlt = MathUtils.clamp(prevAlt + deltaAlt, 2000, 15000)
+            val clearedIas = MathUtils.clamp(prevIas + deltaIas, 160, 250).toShort()
             val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas
 
             if (changed) {

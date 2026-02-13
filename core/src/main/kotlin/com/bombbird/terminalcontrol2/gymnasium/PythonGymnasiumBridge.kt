@@ -12,6 +12,7 @@ import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
+import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.SIMPLIFIED_LOC_CAP
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
@@ -35,7 +36,7 @@ import kotlin.math.roundToInt
 
 class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     companion object {
-        const val CONSTANT_SIZE = 4
+        const val CONSTANT_SIZE = 16
         const val SIZE_PER_AIRCRAFT = 52
         const val SIZE_PER_INSTRUCTION = 6
         const val ADDITIONAL_PADDING = (8 - (CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION) % 8) % 8
@@ -60,6 +61,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     private val agentIdToAircraft = Array<Entity?>(MAX_RL_AIRCRAFT) { null }
     private val assignedCallsigns = GdxSet<String>()
     private var spawnedInCurrentSession = 0
+    private var landedInCurrentSession = 0
 
     private val rewardHandler = RewardHandler(evalMode)
 
@@ -90,6 +92,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
 
             // Reset the agent ID to aircraft mapping
             for (i in 0 until agentIdToAircraft.size) agentIdToAircraft[i] = null
+            landedInCurrentSession = 0
 
             assignedCallsigns.clear()
             resetAircraft()
@@ -204,6 +207,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
                 } else if (!aircraft.containsKey(currAcInfo.icaoCallsign)) {
                     currShouldTerminate = 1
                     agentIdToAircraft[currAgentID] = null
+                    landedInCurrentSession++
                 }
 
                 // Reward, ICAO type, x, y, alt, ias, track, track rate, vertical speed, cleared alt, cleared hdg, cleared IAS, LOC cap, mask
@@ -229,6 +233,13 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
 
             stateArray.put(currAgentID.byte)
         }
+
+        // Write miscellaneous metrics
+        sharedMemoryIPC.setFloat(4, landedInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(8, rewardHandler.aircraftConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(12, rewardHandler.mvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+
+        // Copy all aircraft states
         sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)
 
         // Action waiting flag

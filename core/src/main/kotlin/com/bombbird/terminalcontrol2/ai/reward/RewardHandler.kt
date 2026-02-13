@@ -45,6 +45,10 @@ class RewardHandler(private val eval: Boolean) {
     private val acPrevLocDistPx: Array<Float?> = Array(MAX_RL_AIRCRAFT) { null }
     private val acPrevAlt: Array<Float?> = Array(MAX_RL_AIRCRAFT) { null }
     private val acPrevClearance: Array<ClearanceState?> = Array(MAX_RL_AIRCRAFT) { null }
+    var mvaConflictCount = 0
+        private set
+    var aircraftConflictCount = 0
+        private set
 
     private val targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
@@ -56,6 +60,8 @@ class RewardHandler(private val eval: Boolean) {
             acPrevAlt[i] = null
             acPrevClearance[i] = null
         }
+        mvaConflictCount = 0
+        aircraftConflictCount = 0
     }
 
     fun rewardStep(aircraft: Array<Entity?>, aircraftMap: GdxArrayMap<String, Aircraft>): Array<Float?> {
@@ -138,7 +144,13 @@ class RewardHandler(private val eval: Boolean) {
             // Assign negative reward for conflict involving this aircraft
             val conflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
             if (conflict != null) {
-                acReward -= if (conflict.entity2 != null) AIRCRAFT_CONFLICT_PENALTY else MVA_CONFLICT_PENALTY
+                if (conflict.entity2 != null) {
+                    acReward -= AIRCRAFT_CONFLICT_PENALTY
+                    aircraftConflictCount++
+                } else {
+                    acReward -= MVA_CONFLICT_PENALTY
+                    mvaConflictCount++
+                }
             }
 
             // Discourage aircraft from loitering too long close to LOC

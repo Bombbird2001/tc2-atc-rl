@@ -139,9 +139,7 @@ class TrajectoryManager {
         }
     }
 
-    /**
-     * Frees [allTrajectoryPoints] back to the pool
-     */
+    /** Frees [allTrajectoryPoints] back to the pool */
     fun freePooledTrajectoryPoints(allTrajectoryPoints: Array<Array<GdxArray<TrajectoryPoint>>>) {
         for (i in allTrajectoryPoints.indices) {
             for (j in 0 until allTrajectoryPoints[i].size) {
@@ -150,6 +148,11 @@ class TrajectoryManager {
                 }
             }
         }
+    }
+
+    /** Frees a [trajectoryPoint] back to the pool */
+    fun freePooledTrajectoryPoint(trajectoryPoint: TrajectoryPoint) {
+        trajectoryPool.free(trajectoryPoint)
     }
 
     /**

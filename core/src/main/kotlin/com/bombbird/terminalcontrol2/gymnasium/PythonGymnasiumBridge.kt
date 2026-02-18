@@ -76,7 +76,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
         spawnedInCurrentSession++
     }
 
-    override fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
         if (loopExited) return
 
         if (!trainerInitialized) {
@@ -112,6 +112,15 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
                 loopExited = true
                 return
             }
+
+            // Check for exit flag
+            if (sharedMemoryIPC.readBytes(1, 1)[0] == 1.byte) {
+                FileLog.warn("$envName PythonGymnasiumBridge", "Training finished, exiting simulator")
+                loopExited = true
+                stopServer()
+                return
+            }
+
 //            println("${System.currentTimeMillis()} (Reset) Performing action")
             performAction(aircraft)
 
@@ -142,13 +151,22 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
                 loopExited = true
                 return
             }
+
+            // Check for exit flag
+            if (sharedMemoryIPC.readBytes(1, 1)[0] == 1.byte) {
+                FileLog.warn("$envName PythonGymnasiumBridge", "Training finished, exiting simulator")
+                loopExited = true
+                stopServer()
+                return
+            }
+
 //            println("${System.currentTimeMillis()} Performing action")
             performAction(aircraft)
 
             framesToAction = FRAMES_PER_ACTION
         }
 
-        if (framesToAction < -100000000) {
+        if (framesToAction < -10000000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"

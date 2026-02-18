@@ -728,7 +728,7 @@ class GameServer private constructor(
             pendingRunnablesQueue.poll()?.run() ?: break
         }
 
-        pythonGymBridge.update(aircraft) {
+        pythonGymBridge.update(aircraft, this::stopServer) {
             // Reset function - despawn current aircraft, create new aircraft
             for (i in aircraft.size - 1 downTo 0) {
                 val ac = aircraft.getValueAt(i)

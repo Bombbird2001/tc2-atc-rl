@@ -33,6 +33,7 @@ class ConflictManager {
 
     fun getConflictsRL(aircraftArray: ImmutableArray<Entity>): GdxArray<Conflict> {
         conflicts.clear()
+        potentialConflicts.clear()
 
         val startingAlt = getConflictStartAltitude()
         val conflictLevels: Array<GdxArray<Entity>> = Array(ceil((MAX_ALT + 1500f) / VERT_SEP).roundToInt() - startingAlt / VERT_SEP) {

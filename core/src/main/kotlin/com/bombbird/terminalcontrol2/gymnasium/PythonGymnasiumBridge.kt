@@ -166,7 +166,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             framesToAction = FRAMES_PER_ACTION
         }
 
-        if (framesToAction < -10000000) {
+        if (framesToAction < -100000000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"

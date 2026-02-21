@@ -54,6 +54,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     }
 
     private var framesToAction = FRAMES_PER_ACTION
+    private var lastActionTime = 0L
     private var trainerInitialized = false
     private var loopExited = false
     private var resetNeeded = false
@@ -125,6 +126,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             performAction(aircraft)
 
             framesToAction = FRAMES_PER_ACTION
+            lastActionTime = System.currentTimeMillis()
             return
         }
 
@@ -164,9 +166,11 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             performAction(aircraft)
 
             framesToAction = FRAMES_PER_ACTION
+            lastActionTime = System.currentTimeMillis()
         }
 
-        if (framesToAction < -100000000) {
+        // Max 5 minutes of waiting before considering as deadlocked
+        if ((System.currentTimeMillis() - lastActionTime) > 5 * 60 * 1000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"

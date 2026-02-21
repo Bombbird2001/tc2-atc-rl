@@ -36,7 +36,7 @@ import kotlin.math.roundToInt
 
 class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     companion object {
-        const val CONSTANT_SIZE = 16
+        const val CONSTANT_SIZE = 20
         const val SIZE_PER_AIRCRAFT = 52
         const val SIZE_PER_INSTRUCTION = 6
         const val ADDITIONAL_PADDING = (8 - (CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION) % 8) % 8
@@ -260,6 +260,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
         sharedMemoryIPC.setFloat(4, landedInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
         sharedMemoryIPC.setFloat(8, rewardHandler.aircraftConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
         sharedMemoryIPC.setFloat(12, rewardHandler.mvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(16, rewardHandler.wakeConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
 
         // Copy all aircraft states
         sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)

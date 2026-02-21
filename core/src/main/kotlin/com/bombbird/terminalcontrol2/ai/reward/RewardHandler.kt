@@ -11,6 +11,7 @@ import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_CONFLICT_PENALTY
+import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_A
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_B
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_C
@@ -24,8 +25,10 @@ import com.bombbird.terminalcontrol2.global.GOAL_REWARD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.MVA_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
+import com.bombbird.terminalcontrol2.global.WAKE_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
+import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
@@ -49,6 +52,8 @@ class RewardHandler(private val eval: Boolean) {
         private set
     var aircraftConflictCount = 0
         private set
+    var wakeConflictCount = 0
+        private set
 
     private val targetApproach = lazy {
         GAME.gameServer?.airports?.get(0)?.entity?.get(ApproachChildren.mapper)?.approachMap?.get("ILS 02L")!!
@@ -62,12 +67,13 @@ class RewardHandler(private val eval: Boolean) {
         }
         mvaConflictCount = 0
         aircraftConflictCount = 0
+        wakeConflictCount = 0
     }
 
     fun rewardStep(aircraft: Array<Entity?>, aircraftMap: GdxArrayMap<String, Aircraft>): Array<Float?> {
         if (aircraft.size != MAX_RL_AIRCRAFT) throw IllegalStateException("Expected $MAX_RL_AIRCRAFT but found ${aircraft.size}")
 
-        val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT) {
+        val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT || CHECK_WAKE_CONFLICT) {
             // Conflict check
             conflictManager.getConflictsRL(ImmutableArray(aircraft.filterNotNull().toGdxArray()))
         } else GdxArray()
@@ -145,8 +151,13 @@ class RewardHandler(private val eval: Boolean) {
             val conflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
             if (conflict != null) {
                 if (conflict.entity2 != null) {
-                    acReward -= AIRCRAFT_CONFLICT_PENALTY
-                    aircraftConflictCount++
+                    if (conflict.reason == Conflict.WAKE_INFRINGE) {
+                        acReward -= WAKE_CONFLICT_PENALTY
+                        wakeConflictCount++
+                    } else {
+                        acReward -= AIRCRAFT_CONFLICT_PENALTY
+                        aircraftConflictCount++
+                    }
                 } else {
                     acReward -= MVA_CONFLICT_PENALTY
                     mvaConflictCount++

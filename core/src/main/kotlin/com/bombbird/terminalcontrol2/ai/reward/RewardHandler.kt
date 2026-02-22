@@ -10,7 +10,6 @@ import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
-import com.bombbird.terminalcontrol2.global.AIRCRAFT_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_A
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_B
@@ -23,9 +22,7 @@ import com.bombbird.terminalcontrol2.global.ENABLE_PROXIMITY_SCORE
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.GOAL_REWARD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
-import com.bombbird.terminalcontrol2.global.MVA_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
-import com.bombbird.terminalcontrol2.global.WAKE_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
 import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
@@ -40,9 +37,11 @@ import ktx.collections.toGdxArray
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
-import kotlin.math.min
 
-class RewardHandler(private val eval: Boolean) {
+class RewardHandler(
+    private val eval: Boolean, private val mvaConflictPenalty: Float,
+    private val aircraftConflictPenalty: Float, private val wakeConflictPenalty: Float
+) {
     private val conflictManager = ConflictManager()
 
     private val acPrevLocDistPx: Array<Float?> = Array(MAX_RL_AIRCRAFT) { null }
@@ -152,14 +151,14 @@ class RewardHandler(private val eval: Boolean) {
             if (conflict != null) {
                 if (conflict.entity2 != null) {
                     if (conflict.reason == Conflict.WAKE_INFRINGE) {
-                        acReward -= WAKE_CONFLICT_PENALTY
+                        acReward -= wakeConflictPenalty
                         wakeConflictCount++
                     } else {
-                        acReward -= AIRCRAFT_CONFLICT_PENALTY
+                        acReward -= aircraftConflictPenalty
                         aircraftConflictCount++
                     }
                 } else {
-                    acReward -= MVA_CONFLICT_PENALTY
+                    acReward -= mvaConflictPenalty
                     mvaConflictCount++
                 }
             }

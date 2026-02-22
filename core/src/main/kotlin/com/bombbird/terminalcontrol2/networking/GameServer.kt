@@ -50,7 +50,8 @@ import kotlin.math.min
 class GameServer private constructor(
     airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
     testMode: Boolean = false, envId: String = "0", private val isHeadlessTraining: Boolean = false,
-    private val slowMode: Boolean = false, private val rewardEval: Boolean = false
+    private val slowMode: Boolean = false, private val rewardEval: Boolean = false,
+    mvaConflictPenalty: Float = 0f, aircraftConflictPenalty: Float = 0f, wakeConflictPenalty: Float = 0f,
 ) {
     companion object {
         const val UPDATE_INTERVAL = 1000.0 / SERVER_UPDATE_RATE
@@ -72,8 +73,14 @@ class GameServer private constructor(
         const val STORMS_NIGHTMARE: Byte = 11
 
         /** Creates a new single-player mode game server object for ATC-RL headless training */
-        fun newRLGameServer(airportToHost: String, envId: String, evalMode: Boolean): GameServer {
-            return GameServer(airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true, slowMode = false, rewardEval = evalMode)
+        fun newRLGameServer(
+            airportToHost: String, envId: String, evalMode: Boolean, mvaConflictPenalty: Float,
+            aircraftConflictPenalty: Float, wakeConflictPenalty: Float
+        ): GameServer {
+            return GameServer(
+                airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true, slowMode = false, rewardEval = evalMode,
+                mvaConflictPenalty = mvaConflictPenalty, aircraftConflictPenalty = aircraftConflictPenalty, wakeConflictPenalty = wakeConflictPenalty
+            )
         }
 
         /**
@@ -262,7 +269,9 @@ class GameServer private constructor(
 
     init {
         if (!testMode) {
-            pythonGymBridge = PythonGymnasiumBridge(envId, rewardEval)
+            pythonGymBridge = PythonGymnasiumBridge(
+                envId, rewardEval, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
+            )
             initiateServer(airportToHost, saveId)
         } else {
             pythonGymBridge = StubGymnasiumBridge

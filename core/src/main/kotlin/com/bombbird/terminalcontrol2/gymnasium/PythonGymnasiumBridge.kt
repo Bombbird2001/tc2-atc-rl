@@ -26,7 +26,6 @@ import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.modulateHeading
 import ktx.ashley.get
 import ktx.ashley.has
-import ktx.ashley.hasNot
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.GdxSet
@@ -34,7 +33,10 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.roundToInt
 
-class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
+class PythonGymnasiumBridge(
+    envId: String, evalMode: Boolean, mvaConflictPenalty: Float,
+    aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
+): GymnasiumBridge {
     companion object {
         const val CONSTANT_SIZE = 20
         const val SIZE_PER_AIRCRAFT = 52
@@ -64,7 +66,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     private var spawnedInCurrentSession = 0
     private var landedInCurrentSession = 0
 
-    private val rewardHandler = RewardHandler(evalMode)
+    private val rewardHandler = RewardHandler(evalMode, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"

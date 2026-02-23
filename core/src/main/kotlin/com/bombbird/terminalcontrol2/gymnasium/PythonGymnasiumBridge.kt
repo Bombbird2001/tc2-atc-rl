@@ -17,6 +17,7 @@ import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.SIMPLIFIED_LOC_CAP
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPCFactory
+import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
@@ -34,8 +35,8 @@ import java.nio.ByteOrder
 import kotlin.math.roundToInt
 
 class PythonGymnasiumBridge(
-    envId: String, evalMode: Boolean, mvaConflictPenalty: Float,
-    aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
+    envId: String, conflictManager: ConflictManager, evalMode: Boolean, goalReward: Float,
+    mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
 ): GymnasiumBridge {
     companion object {
         const val CONSTANT_SIZE = 20
@@ -66,7 +67,7 @@ class PythonGymnasiumBridge(
     private var spawnedInCurrentSession = 0
     private var landedInCurrentSession = 0
 
-    private val rewardHandler = RewardHandler(evalMode, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
+    private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"

@@ -115,6 +115,7 @@ var BUILD_VERSION = 0
 var DATATAG_LAYOUTS = HashMap<String, DatatagConfig>()
 
 /** Reward options for visualizing model performance */
+var EVAL_GOAL_REWARD = 0f
 var EVAL_MVA_CONFLICT_PENALTY = 0f
 var EVAL_AIRCRAFT_CONFLICT_PENALTY = 0f
 var EVAL_WAKE_CONFLICT_PENALTY = 0f

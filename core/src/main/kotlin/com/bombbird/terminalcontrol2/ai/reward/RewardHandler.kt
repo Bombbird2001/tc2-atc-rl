@@ -5,6 +5,8 @@ import com.badlogic.ashley.utils.ImmutableArray
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
+import com.bombbird.terminalcontrol2.components.LandingRoll
+import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
@@ -20,17 +22,21 @@ import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_PENALTY
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_THRESHOLD_NM
 import com.bombbird.terminalcontrol2.global.ENABLE_PROXIMITY_SCORE
 import com.bombbird.terminalcontrol2.global.GAME
-import com.bombbird.terminalcontrol2.global.GOAL_REWARD
+import com.bombbird.terminalcontrol2.global.LOC_PROX_PENALTY
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
 import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
+import com.bombbird.terminalcontrol2.traffic.conflict.PotentialConflict
+import com.bombbird.terminalcontrol2.utilities.byte
 import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
+import com.bombbird.terminalcontrol2.utilities.nmToPx
 import com.bombbird.terminalcontrol2.utilities.pxToNm
 import ktx.ashley.get
+import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.toGdxArray
@@ -39,10 +45,12 @@ import kotlin.math.exp
 import kotlin.math.max
 
 class RewardHandler(
-    private val eval: Boolean, private val mvaConflictPenalty: Float,
-    private val aircraftConflictPenalty: Float, private val wakeConflictPenalty: Float
+    private val conflictManager: ConflictManager, private val eval: Boolean, private val goalReward: Float,
+    private val mvaConflictPenalty: Float, private val aircraftConflictPenalty: Float, private val wakeConflictPenalty: Float
 ) {
-    private val conflictManager = ConflictManager()
+    companion object {
+        val EMPTY_POTENTIAL_CONFLICTS = GdxArray<PotentialConflict>(1)
+    }
 
     private val acPrevLocDistPx: Array<Float?> = Array(MAX_RL_AIRCRAFT) { null }
     private val acPrevAlt: Array<Float?> = Array(MAX_RL_AIRCRAFT) { null }
@@ -77,6 +85,8 @@ class RewardHandler(
             conflictManager.getConflictsRL(ImmutableArray(aircraft.filterNotNull().toGdxArray()))
         } else GdxArray()
 
+        if (eval) GAME.gameServer?.sendConflicts(conflicts, EMPTY_POTENTIAL_CONFLICTS)
+
         // Proximity score = (c * e ^ (-a * (dist_nm_between - b))) * max(0, n - m * (altitude_ft_between / 1000)), where a, b, c, m, n are constants
         val proximityRewardScores = Array(MAX_RL_AIRCRAFT) { 0f }
         if (CHECK_AIRCRAFT_CONFLICT && ENABLE_PROXIMITY_SCORE) {
@@ -106,7 +116,7 @@ class RewardHandler(
             val currPos = currAircraft[Position.mapper]!!
             val currAlt = currAircraft[Altitude.mapper]!!
             val currClearance = getLatestClearanceState(currAircraft)!!
-//            val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper) || currAircraft.has(LandingRoll.mapper)) 1.byte else 0.byte
+            val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper) || currAircraft.has(LandingRoll.mapper)) 1.byte else 0.byte
 
             var acReward = acPrevClearance[i]?.let { prevClearance ->
                 val clearanceChangePenalty = (if (prevClearance.vectorHdg != currClearance.vectorHdg) CLEARANCE_CHANGE_PENALTY else 0f) +
@@ -118,7 +128,7 @@ class RewardHandler(
 
             if (!aircraftMap.containsKey(currAcInfo.icaoCallsign)) {
                 // Lump sum reward on landing
-                acReward += GOAL_REWARD
+                acReward += goalReward
             }
 
             // Reward from previous action
@@ -141,6 +151,9 @@ class RewardHandler(
 
                 // Subtract sum of proximity score between this and every other aircraft
                 acReward -= proximityRewardScores[i]
+
+                // Discourage aircraft from loitering too long close to LOC
+                if (currLocCap == 0.byte && newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) acReward -= LOC_PROX_PENALTY
             }
 
             // Constant per time step penalty
@@ -150,21 +163,18 @@ class RewardHandler(
             val conflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
             if (conflict != null) {
                 if (conflict.entity2 != null) {
+                    acReward -= aircraftConflictPenalty
+                    aircraftConflictCount++
+                } else {
                     if (conflict.reason == Conflict.WAKE_INFRINGE) {
                         acReward -= wakeConflictPenalty
                         wakeConflictCount++
                     } else {
-                        acReward -= aircraftConflictPenalty
-                        aircraftConflictCount++
+                        acReward -= mvaConflictPenalty
+                        mvaConflictCount++
                     }
-                } else {
-                    acReward -= mvaConflictPenalty
-                    mvaConflictCount++
                 }
             }
-
-            // Discourage aircraft from loitering too long close to LOC
-//                if (newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) totalAcReward -= 0.06f
 
             rewards[i] = acReward
         }

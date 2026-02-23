@@ -1,5 +1,6 @@
 package com.bombbird.terminalcontrol2.traffic.conflict
 
+import com.badlogic.gdx.utils.ArrayMap.Entries
 import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.MathUtils
@@ -21,6 +22,7 @@ import ktx.ashley.remove
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.set
+import ktx.collections.toGdxArray
 import ktx.math.plus
 import ktx.math.times
 import kotlin.math.*
@@ -160,6 +162,16 @@ class TrajectoryManager {
     /** Frees a [trajectoryPoint] back to the pool */
     fun freePooledTrajectoryPoint(trajectoryPoint: TrajectoryPoint) {
         trajectoryPool.free(trajectoryPoint)
+    }
+
+    fun checkTrajectoryConflictsRL(allTrajectoryPoints: Array<Array<GdxArray<TrajectoryPoint>>>): GdxArray<PredictedConflict> {
+        // Clear all conflicts
+        predictedConflicts.clear()
+
+        // Check aircraft separation conflict
+        predictedConflicts.putAll(checkAllTrajectoryPointConflicts(allTrajectoryPoints))
+
+        return Entries(predictedConflicts).map { it.value }.toGdxArray()
     }
 
     /**
@@ -376,7 +388,7 @@ class TrajectoryManager {
 
     /** Re-clear altitude for conflicts that has not been resolved */
     private fun resolveACCConflicts() {
-        val aircraftConflicts = ArrayMap.Entries(predictedConflicts).filter { it.value.altFt >= getACCStartAltitude() }.map { it.value }
+        val aircraftConflicts = Entries(predictedConflicts).filter { it.value.altFt >= getACCStartAltitude() }.map { it.value }
 
         for (conflict in aircraftConflicts) {
             // Ignore MVA conflicts

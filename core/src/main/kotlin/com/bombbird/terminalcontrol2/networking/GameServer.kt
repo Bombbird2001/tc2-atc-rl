@@ -275,9 +275,10 @@ class GameServer private constructor(
     init {
         if (!testMode) {
             val tfcSystemInterval = TrafficSystemInterval()
+            val trajSystemInterval = TrajectorySystemInterval()
             pythonGymBridge = PythonGymnasiumBridge(
-                envId, tfcSystemInterval.conflictManager, rewardEval, goalReward, mvaConflictPenalty,
-                aircraftConflictPenalty, wakeConflictPenalty
+                envId, tfcSystemInterval.conflictManager, trajSystemInterval, rewardEval,
+                goalReward, mvaConflictPenalty,aircraftConflictPenalty, wakeConflictPenalty
             )
             initiateServer(airportToHost, saveId, tfcSystemInterval)
         } else {

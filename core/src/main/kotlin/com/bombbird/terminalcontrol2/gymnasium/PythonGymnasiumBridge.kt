@@ -1,6 +1,7 @@
 package com.bombbird.terminalcontrol2.gymnasium
 
 import com.badlogic.ashley.core.Entity
+import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.MathUtils
 import com.bombbird.terminalcontrol2.ai.reward.RewardHandler
 import com.bombbird.terminalcontrol2.components.AircraftInfo
@@ -13,10 +14,16 @@ import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
+import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_TRAJECTORY_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.SIMPLIFIED_LOC_CAP
+import com.bombbird.terminalcontrol2.global.TRAJECTORY_CHECK_MAX_TIME_S
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPCFactory
+import com.bombbird.terminalcontrol2.systems.TrajectorySystemInterval
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.utilities.FileLog
@@ -30,17 +37,19 @@ import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.GdxSet
+import ktx.collections.toGdxArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class PythonGymnasiumBridge(
-    envId: String, conflictManager: ConflictManager, evalMode: Boolean, goalReward: Float,
-    mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
+    envId: String, private val conflictManager: ConflictManager, private val trajectorySystemInterval: TrajectorySystemInterval, evalMode: Boolean,
+    goalReward: Float, mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
 ): GymnasiumBridge {
     companion object {
         const val CONSTANT_SIZE = 20
-        const val SIZE_PER_AIRCRAFT = 52
+        const val SIZE_PER_AIRCRAFT = 56
         const val SIZE_PER_INSTRUCTION = 6
         const val ADDITIONAL_PADDING = (8 - (CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION) % 8) % 8
         const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
@@ -137,7 +146,7 @@ class PythonGymnasiumBridge(
         if (framesToAction <= 0 && !resetNeeded) {
             terminating = writeState(aircraft)
 
-            // Send action ready event after writing state to shared memory
+            // Send action ready event after writing state and action masks to shared memory
             sharedMemoryIPC.signalActionReady()
 //            println("${System.currentTimeMillis()} Set action ready")
 
@@ -202,7 +211,15 @@ class PythonGymnasiumBridge(
             assignedCallsigns.add(callsign)
         }
 
-        val acRewards = rewardHandler.rewardStep(agentIdToAircraft, aircraft)
+        val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT || CHECK_WAKE_CONFLICT) {
+            // Conflict check
+            conflictManager.getConflictsRL(ImmutableArray(agentIdToAircraft.filterNotNull().toGdxArray()))
+        } else GdxArray()
+        val predictedConflicts = if (CHECK_TRAJECTORY_CONFLICT) {
+            trajectorySystemInterval.trajectoryManager.checkTrajectoryConflictsRL(trajectorySystemInterval.trajectoryTimeStates)
+        } else GdxArray()
+
+        val acRewards = rewardHandler.rewardStep(agentIdToAircraft, aircraft, conflicts)
 
         val stateArray = ByteBuffer.allocate(MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT).order(ByteOrder.nativeOrder())
         val acToRemove = GdxArray<Int>()
@@ -210,9 +227,10 @@ class PythonGymnasiumBridge(
             val currAircraft = agentIdToAircraft[currAgentID]
 
             if (currAircraft == null) {
-                stateArray.position(stateArray.position() + SIZE_PER_AIRCRAFT - 3)
+                stateArray.position(stateArray.position() + SIZE_PER_AIRCRAFT - 7)
                 stateArray.put(0)  // Aircraft does not exist
                 stateArray.put(0)  // Termination flag (NA)
+                stateArray.put(0)  // Action mask (NA)
             } else {
                 val currAcInfo = currAircraft[AircraftInfo.mapper]!!
                 val currPos = currAircraft[Position.mapper]!!
@@ -254,9 +272,28 @@ class PythonGymnasiumBridge(
                 stateArray.put(1)  // Aircraft exists
                 stateArray.put(currShouldTerminate)
                 nonTerminateCount += 1 - currShouldTerminate
+                var altMask = 15
+                val ongoingConflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
+                if (ongoingConflict != null) for (predConflict in predictedConflicts) {
+                    if (predConflict.aircraft1 != currAircraft && predConflict.aircraft2 != currAircraft) continue
+                    if (predConflict.advanceTimeS > TRAJECTORY_CHECK_MAX_TIME_S) continue
+
+                    // Masking rules:
+                    // If aircraft is not currently in conflict, and a conflict is predicted on current trajectory that:
+                    // 1. Occurs at about the same altitude as cleared altitude, mask the "no change" action
+                    // 2. Occurs at lower altitude than cleared altitude (which is above current aircraft altitude), mask the "+1000" and "no change" actions
+                    // 3. Occurs at higher altitude than cleared altitude (which is below current aircraft altitude), mask the "-3000", "-1000" and "no change action"
+                    if (abs(predConflict.altFt - currPrevClearance.clearedAlt) <= 25) altMask -= 2
+                    else if (predConflict.altFt < currPrevClearance.clearedAlt) altMask -= 3
+                    else if (predConflict.altFt > currPrevClearance.clearedAlt) altMask -= 14
+
+                    break
+                }
+                stateArray.put(altMask.byte)
             }
 
             stateArray.put(currAgentID.byte)
+            stateArray.position(stateArray.position() + 3)  // 3 bytes padding
         }
 
         // Write miscellaneous metrics
@@ -309,10 +346,12 @@ class PythonGymnasiumBridge(
 
             val deltaHdg = when (val opt = sharedMemoryIPC.readShort(instructionStartOffset).toInt()) {
                 0 -> -45f
-                1 -> -10f
-                2 -> 0f
-                3 -> 10f
-                4 -> 45f
+                1 -> -20f
+                2 -> -10f
+                3 -> 0f
+                4 -> 10f
+                5 -> 20f
+                6 -> 45f
                 else -> throw IllegalArgumentException("Unexpected hdg action $opt")
             }
             val deltaAlt = when (val opt = bytes[instructionStartOffset + 2].toInt()) {
@@ -320,7 +359,6 @@ class PythonGymnasiumBridge(
                 1 -> -1000
                 2 -> 0
                 3 -> 1000
-                4 -> 3000
                 else -> throw IllegalArgumentException("Unexpected alt action $opt")
             }
             val deltaIas = when (val opt = bytes[instructionStartOffset + 3].toInt()) {
@@ -328,7 +366,6 @@ class PythonGymnasiumBridge(
                 1 -> -10
                 2 -> 0
                 3 -> 10
-                4 -> 30
                 else -> throw IllegalArgumentException("Unexpected ias action $opt")
             }
 

@@ -1,7 +1,6 @@
 package com.bombbird.terminalcontrol2.ai.reward
 
 import com.badlogic.ashley.core.Entity
-import com.badlogic.ashley.utils.ImmutableArray
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
@@ -10,9 +9,7 @@ import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
-import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
-import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_A
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_B
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_C
@@ -39,7 +36,6 @@ import ktx.ashley.get
 import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
-import ktx.collections.toGdxArray
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
@@ -77,13 +73,8 @@ class RewardHandler(
         wakeConflictCount = 0
     }
 
-    fun rewardStep(aircraft: Array<Entity?>, aircraftMap: GdxArrayMap<String, Aircraft>): Array<Float?> {
+    fun rewardStep(aircraft: Array<Entity?>, aircraftMap: GdxArrayMap<String, Aircraft>, conflicts: GdxArray<Conflict>): Array<Float?> {
         if (aircraft.size != MAX_RL_AIRCRAFT) throw IllegalStateException("Expected $MAX_RL_AIRCRAFT but found ${aircraft.size}")
-
-        val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT || CHECK_WAKE_CONFLICT) {
-            // Conflict check
-            conflictManager.getConflictsRL(ImmutableArray(aircraft.filterNotNull().toGdxArray()))
-        } else GdxArray()
 
         if (eval) GAME.gameServer?.sendConflicts(conflicts, EMPTY_POTENTIAL_CONFLICTS)
 

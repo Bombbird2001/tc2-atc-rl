@@ -41,7 +41,7 @@ class TrajectorySystemInterval: IntervalSystem(TRAJECTORY_UPDATE_INTERVAL_S) {
             GdxArray()
         }
     }
-    private val trajectoryManager = TrajectoryManager()
+    val trajectoryManager = TrajectoryManager()
 
     override fun updateInterval() {
         val weatherDeviation = weatherDeviationEntities.getEntities()

@@ -4,13 +4,13 @@ import com.badlogic.ashley.core.Engine
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.Polygon
 import com.badlogic.gdx.utils.ArrayMap.Entries
+import com.bombbird.terminalcontrol2.ai.Agent
+import com.bombbird.terminalcontrol2.ai.StubAgent
 import com.bombbird.terminalcontrol2.ai.holdanddispatch.HoldAndDispatch
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.*
 import com.bombbird.terminalcontrol2.files.*
 import com.bombbird.terminalcontrol2.global.*
-import com.bombbird.terminalcontrol2.gymnasium.GymnasiumBridge
-import com.bombbird.terminalcontrol2.gymnasium.StubGymnasiumBridge
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.networking.dataclasses.*
@@ -29,6 +29,8 @@ import ktx.ashley.get
 import ktx.ashley.remove
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -266,10 +268,9 @@ class GameServer private constructor(
     // var timeCounter = 0f
     // var frames = 0
     private var startTime = -1L
-    val pythonGymBridge: GymnasiumBridge
-    private val envName = "env[$envId]"
+//    val pythonGymBridge: GymnasiumBridge
 
-    val baselineAI = HoldAndDispatch(this)
+    val baselineAI: Agent
 
     // Loading screen callbacks
     var serverStartedCallback: (() -> Unit)? = null
@@ -277,14 +278,19 @@ class GameServer private constructor(
     init {
         if (!testMode) {
             val tfcSystemInterval = TrafficSystemInterval()
-            val trajSystemInterval = TrajectorySystemInterval()
-            pythonGymBridge = PythonGymnasiumBridge(
-                envId, tfcSystemInterval.conflictManager, trajSystemInterval, rewardEval,
-                goalReward, mvaConflictPenalty,aircraftConflictPenalty, wakeConflictPenalty
+            baselineAI = HoldAndDispatch(
+                this, tfcSystemInterval.conflictManager, goalReward,
+                mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
             )
+            CsvWriter.setRunDirectory(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")))
+//            pythonGymBridge = PythonGymnasiumBridge(
+//                envId, tfcSystemInterval.conflictManager, trajSystemInterval, rewardEval,
+//                goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
+//            )
             initiateServer(airportToHost, saveId, tfcSystemInterval)
         } else {
-            pythonGymBridge = StubGymnasiumBridge
+            baselineAI = StubAgent
+//            pythonGymBridge = StubGymnasiumBridge
             loadGameTest()
         }
     }
@@ -747,7 +753,7 @@ class GameServer private constructor(
             pendingRunnablesQueue.poll()?.run() ?: break
         }
 
-        baselineAI.update(aircraft, delta) {
+        baselineAI.update(aircraft, delta, ::stopServer) {
             // Reset function - despawn current aircraft, create new aircraft
             for (i in aircraft.size - 1 downTo 0) {
                 val ac = aircraft.getValueAt(i)
@@ -762,22 +768,22 @@ class GameServer private constructor(
             airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
         }
 
-        pythonGymBridge.update(aircraft, this::stopServer) {
-            // Reset function - despawn current aircraft, create new aircraft
-            for (i in aircraft.size - 1 downTo 0) {
-                val ac = aircraft.getValueAt(i)
-                despawnAircraft(ac.entity)
-            }
-            aircraft.clear()
-
-            val airport = airports.getValueAt(0).entity
-
-            // Force spawn 1 aircraft on start
-            createRandomArrivalForAirport(airport, this)
-            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
-
-            return@update aircraft
-        }
+//        pythonGymBridge.update(aircraft, this::stopServer) {
+//            // Reset function - despawn current aircraft, create new aircraft
+//            for (i in aircraft.size - 1 downTo 0) {
+//                val ac = aircraft.getValueAt(i)
+//                despawnAircraft(ac.entity)
+//            }
+//            aircraft.clear()
+//
+//            val airport = airports.getValueAt(0).entity
+//
+//            // Force spawn 1 aircraft on start
+//            createRandomArrivalForAirport(airport, this)
+//            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
+//
+//            return@update aircraft
+//        }
     }
 
     /**

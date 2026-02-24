@@ -133,9 +133,9 @@ class ConflictManager {
             }
         }
 
-        CsvTools.writeToWakeConflict(HoldAndDispatch.timePassed, wakeCount)
-        CsvTools.writeToConflict(HoldAndDispatch.timePassed, normalCount)
-        CsvTools.writeToMvaConflict(HoldAndDispatch.timePassed, mvaCount)
+        CsvWriter.writeToWakeConflict(HoldAndDispatch.timePassed, wakeCount)
+        CsvWriter.writeToConflict(HoldAndDispatch.timePassed, normalCount)
+        CsvWriter.writeToMvaConflict(HoldAndDispatch.timePassed, mvaCount)
     }
 
     /**

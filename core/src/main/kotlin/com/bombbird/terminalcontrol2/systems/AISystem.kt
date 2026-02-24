@@ -180,7 +180,7 @@ class AISystem: EntitySystem() {
 
         val landingsPerHour = prevLandingQueue.size / (prevLandingQueue.last() - prevLandingQueue.first()) * 3600
 
-        CsvTools.writeToArrivalRate(HoldAndDispatch.timePassed, landingsPerHour)
+        CsvWriter.writeToArrivalRate(HoldAndDispatch.timePassed, landingsPerHour)
     }
 
     /** Set the acceleration for landing aircraft */

@@ -94,10 +94,10 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                         val arrivalCount = arrivalFamilyEntities.getEntities().filter {
                             it[FlightType.mapper]?.type == FlightType.ARRIVAL && it[ArrivalAirport.mapper]?.arptId == arptId
                         }.size
-                        // 60 sec spawn interval
+                        // 120 sec spawn interval
                         arptArrStats.arrivalSpawnTimer = SPAWN_INTERVAL_S
 //                        arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
-                        if (arrivalCount >= arptArrStats.targetTrafficValue || baselineAI.spawnCount >= AIRCRAFT_TO_SPAWN) continue
+                        if (arrivalCount >= arptArrStats.targetTrafficValue || baselineAI.getEpisodeSpawnCount() >= AIRCRAFT_TO_SPAWN) continue
                         createRandomArrivalForAirport(arptEntity, this)
                         baselineAI.incrementSpawnCount()
 //                        FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")

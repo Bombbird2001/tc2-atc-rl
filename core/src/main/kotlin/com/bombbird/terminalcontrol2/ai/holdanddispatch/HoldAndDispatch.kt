@@ -1,9 +1,11 @@
 package com.bombbird.terminalcontrol2.ai.holdanddispatch
 
 import com.badlogic.ashley.core.Entity
+import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.Queue
+import com.bombbird.terminalcontrol2.ai.Agent
 import com.bombbird.terminalcontrol2.ai.reward.RewardHandler
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
@@ -16,6 +18,9 @@ import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
+import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
 import com.bombbird.terminalcontrol2.global.HALF_TURN_RATE_THRESHOLD_IAS
 import com.bombbird.terminalcontrol2.global.MAX_HIGH_SPD_ANGULAR_SPD
 import com.bombbird.terminalcontrol2.global.MAX_LOW_SPD_ANGULAR_SPD
@@ -25,7 +30,9 @@ import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.networking.GameServer
 import com.bombbird.terminalcontrol2.traffic.WakeMatrix
-import com.bombbird.terminalcontrol2.utilities.CsvTools
+import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
+import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
+import com.bombbird.terminalcontrol2.utilities.CsvWriter
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
@@ -40,23 +47,29 @@ import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.set
+import ktx.collections.toGdxArray
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-class HoldAndDispatch(private val gs: GameServer) {
+class HoldAndDispatch(
+    private val gs: GameServer, private val conflictManager: ConflictManager,
+    goalReward: Float, mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float
+): Agent {
     companion object {
         var timePassed = 0f
 
-        const val REWARD_INTERVAL = 10 * 30
+        const val STEP_INTERVAL = 10 * 30
     }
 
-    private var rewardCounter = REWARD_INTERVAL
+    private var stepCountdown = STEP_INTERVAL
     private var episodeCounter = -1
-    private var episodeSteps = 0
-    private val rewardHandler = RewardHandler(true)
+    private var episodeStepCounter = 0
+    private val rewardHandler = RewardHandler(
+        conflictManager, true, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
+    )
 
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
     private val distNmFromFAF = 10
@@ -73,15 +86,14 @@ class HoldAndDispatch(private val gs: GameServer) {
         EXITED_HOLD
     }
 
-    var spawnCount = 0
-        private set
+    private var spawnCount = 0
     private val acArray: Array<Entity?> = Array(MAX_RL_AIRCRAFT) { null }
     private val acStates: GdxArrayMap<String, AIState> = GdxArrayMap()
     private val assignedStack: GdxArrayMap<String, HoldStack> = GdxArrayMap()
 
     private var holdingTimeQueue = Queue<Float>()
 
-    fun init() {
+    override fun init() {
         targetLocPoint = gs.waypoints[gs.updatedWaypointMapping["MENNU"]]!!.entity[Position.mapper]!!
         targetApp = gs.airports[0].entity[ApproachChildren.mapper]!!.approachMap["ILS 02L"]!!
         val targetAppTrack = convertWorldAndRenderDeg(targetApp.entity[Direction.mapper]!!.trackUnitVector.angleDeg() + 180)
@@ -98,39 +110,46 @@ class HoldAndDispatch(private val gs: GameServer) {
             targetLocPoint.y - MathUtils.cosDeg(targetAppTrack - offsetAngle) * distPx,
             5000, 353, 5, CommandTarget.TURN_RIGHT, "ILS-02L-RIGHT-HOLD", holdAltInterval
         ))
-
-        CsvTools.clearAllMetricLogFiles()
     }
 
-    fun incrementSpawnCount() {
+    override fun getEpisodeSpawnCount(): Int {
+        return spawnCount
+    }
+
+    override fun incrementSpawnCount() {
         spawnCount++
     }
 
-    fun despawnAircraft(aircraft: Entity) {
+    override fun despawnAircraft(aircraft: Entity) {
         val acIndex = acArray.indexOf(aircraft)
         if (acIndex == -1) return
         acArray[acIndex] = null
     }
 
-    fun reset() {
+    override fun reset() {
         spawnCount = 1
         episodeCounter++
-        episodeSteps = 0
-        rewardCounter = REWARD_INTERVAL
+        episodeStepCounter = 0
+        stepCountdown = STEP_INTERVAL
         rewardHandler.rewardReset()
         holdingTimeQueue.clear()
         acStates.clear()
         assignedStack.clear()
         for (stack in holdingStacks) stack.reset()
         for (i in 0 until acArray.size) acArray[i] = null
-
-        CsvTools.writeToRewards(episodeCounter, rewardHandler.rewardStep(acArray))
     }
 
-    fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, resetEpisode: () -> Unit) {
-        if (aircraft.isEmpty || episodeSteps > 300) {
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit, resetEpisode: () -> Unit) {
+        if (aircraft.isEmpty || episodeStepCounter >= 512) {
             resetEpisode()
             reset()
+
+            if (episodeCounter % 10 == 0 && episodeCounter > 0) println("Finished episode $episodeCounter")
+
+            if (episodeCounter >= 256) {
+                stopServer()
+                return
+            }
         }
 
         var holdCountChanged = false
@@ -286,11 +305,17 @@ class HoldAndDispatch(private val gs: GameServer) {
 
         timePassed += deltaTime
 
-        rewardCounter--
-        if (rewardCounter < 0) {
-            CsvTools.writeToRewards(episodeCounter, rewardHandler.rewardStep(acArray))
-            rewardCounter = REWARD_INTERVAL
-            episodeSteps++
+        stepCountdown--
+        if (stepCountdown < 0) {
+            CsvWriter.writeToRewards(
+                episodeCounter, episodeStepCounter,
+                rewardHandler.rewardStep(acArray, gs.aircraft, getConflicts())
+            )
+
+            CsvWriter.writeToActiveCount(episodeCounter, episodeStepCounter, aircraft.size, spawnCount)
+
+            stepCountdown = STEP_INTERVAL
+            episodeStepCounter++
         }
     }
 
@@ -301,12 +326,12 @@ class HoldAndDispatch(private val gs: GameServer) {
 
         val holdingTime = holdingTimeQueue.average().toFloat()
 
-        CsvTools.writeToAverageHoldingTime(timePassed, holdingTime)
-        CsvTools.writeToIndividualHoldTime(holdingTime)
+        CsvWriter.writeToAverageHoldingTime(timePassed, holdingTime)
+        CsvWriter.writeToIndividualHoldTime(holdingTime)
     }
 
     private fun updateHoldingCountStatistics(newHoldCount: Int) {
-        CsvTools.writeToHoldingCount(timePassed, newHoldCount.toFloat())
+        CsvWriter.writeToHoldingCount(timePassed, newHoldCount.toFloat())
     }
 
     fun calculateDistanceToPointWithTurn(posX: Float, posY: Float, destX: Float, destY: Float, dir: Vector2, maxTurnRateDegPerS: Float, gsPxps: Float): Float {
@@ -328,5 +353,12 @@ class HoldAndDispatch(private val gs: GameServer) {
         val distFromPoint = calculateDistanceBetweenPoints(posX, posY, destX, destY)
 
         return sqrt((distFromPoint - verticalOffset).pow(2) + horizontalOffset.pow(2)) + turnRadiusPx * Math.toRadians(degreeOffset.toDouble()).toFloat()
+    }
+
+    private fun getConflicts(): GdxArray<Conflict> {
+        return if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT || CHECK_WAKE_CONFLICT) {
+            // Conflict check
+            conflictManager.getConflictsRL(ImmutableArray(acArray.filterNotNull().toGdxArray()))
+        } else GdxArray()
     }
 }

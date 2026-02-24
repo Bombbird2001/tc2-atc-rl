@@ -44,7 +44,7 @@ class ConflictManager {
         for (aircraft in aircraftArray) {
             val alt = aircraft[Altitude.mapper]!!
             val sector = getSectorIndexForAlt(alt.altitudeFt, startingAlt)
-            if (sector < conflictLevels.size) conflictLevels[sector].add(aircraft)
+            if (sector >= 0 && sector < conflictLevels.size) conflictLevels[sector].add(aircraft)
         }
 
         // Check aircraft separation with one another

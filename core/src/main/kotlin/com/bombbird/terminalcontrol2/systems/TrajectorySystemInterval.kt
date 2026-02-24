@@ -41,7 +41,7 @@ class TrajectorySystemInterval: IntervalSystem(TRAJECTORY_UPDATE_INTERVAL_S) {
             GdxArray()
         }
     }
-    private val trajectoryManager = TrajectoryManager()
+    val trajectoryManager = TrajectoryManager()
 
     override fun updateInterval() {
         val weatherDeviation = weatherDeviationEntities.getEntities()
@@ -71,6 +71,7 @@ class TrajectorySystemInterval: IntervalSystem(TRAJECTORY_UPDATE_INTERVAL_S) {
                     val expectedSector = getSectorIndexForAlt(alt, startingAltitude)
                     if (expectedSector >= 0 && expectedSector < trajectoryTimeStates[j].size)
                         trajectoryTimeStates[j][expectedSector].add(point)
+                    else trajectoryManager.freePooledTrajectoryPoint(point)
                 }
             }
         }

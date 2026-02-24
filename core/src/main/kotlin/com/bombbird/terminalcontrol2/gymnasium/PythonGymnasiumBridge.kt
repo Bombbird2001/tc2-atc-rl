@@ -1,19 +1,30 @@
 package com.bombbird.terminalcontrol2.gymnasium
 
 import com.badlogic.ashley.core.Entity
+import com.badlogic.ashley.utils.ImmutableArray
+import com.badlogic.gdx.math.MathUtils
 import com.bombbird.terminalcontrol2.ai.reward.RewardHandler
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.GroundTrack
 import com.bombbird.terminalcontrol2.components.IndicatedAirSpeed
+import com.bombbird.terminalcontrol2.components.LandingRoll
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
+import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
+import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_TRAJECTORY_CONFLICT
+import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.SIMPLIFIED_LOC_CAP
+import com.bombbird.terminalcontrol2.global.TRAJECTORY_CHECK_MAX_TIME_S
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPCFactory
+import com.bombbird.terminalcontrol2.systems.TrajectorySystemInterval
+import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
@@ -26,15 +37,21 @@ import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.GdxSet
+import ktx.collections.toGdxArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
-class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
+class PythonGymnasiumBridge(
+    envId: String, private val conflictManager: ConflictManager, private val trajectorySystemInterval: TrajectorySystemInterval, evalMode: Boolean,
+    goalReward: Float, mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
+): GymnasiumBridge {
     companion object {
-        const val CONSTANT_SIZE = 4
-        const val SIZE_PER_AIRCRAFT = 52
+        const val CONSTANT_SIZE = 20
+        const val SIZE_PER_AIRCRAFT = 56
         const val SIZE_PER_INSTRUCTION = 6
-        const val ADDITIONAL_PADDING = 2
+        const val ADDITIONAL_PADDING = (8 - (CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION) % 8) % 8
         const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
 
         const val FRAMES_PER_ACTION = 10 * 30
@@ -45,10 +62,11 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
         const val SPD_ACTION_MULTIPLIER = 10
         const val SPD_ACTION_ADDER = 160
 
-        const val LOOP_EXIT_MS = 15000
+        const val LOOP_EXIT_MS = 60000
     }
 
     private var framesToAction = FRAMES_PER_ACTION
+    private var lastActionTime = 0L
     private var trainerInitialized = false
     private var loopExited = false
     private var resetNeeded = false
@@ -56,8 +74,9 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
     private val agentIdToAircraft = Array<Entity?>(MAX_RL_AIRCRAFT) { null }
     private val assignedCallsigns = GdxSet<String>()
     private var spawnedInCurrentSession = 0
+    private var landedInCurrentSession = 0
 
-    private val rewardHandler = RewardHandler(evalMode)
+    private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
@@ -70,7 +89,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
         spawnedInCurrentSession++
     }
 
-    override fun update(aircraft: GdxArrayMap<String, Aircraft>, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
         if (loopExited) return
 
         if (!trainerInitialized) {
@@ -86,6 +105,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
 
             // Reset the agent ID to aircraft mapping
             for (i in 0 until agentIdToAircraft.size) agentIdToAircraft[i] = null
+            landedInCurrentSession = 0
 
             assignedCallsigns.clear()
             resetAircraft()
@@ -105,10 +125,20 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
                 loopExited = true
                 return
             }
+
+            // Check for exit flag
+            if (sharedMemoryIPC.readBytes(1, 1)[0] == 1.byte) {
+                FileLog.warn("$envName PythonGymnasiumBridge", "Training finished, exiting simulator")
+                loopExited = true
+                stopServer()
+                return
+            }
+
 //            println("${System.currentTimeMillis()} (Reset) Performing action")
             performAction(aircraft)
 
             framesToAction = FRAMES_PER_ACTION
+            lastActionTime = System.currentTimeMillis()
             return
         }
 
@@ -116,7 +146,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
         if (framesToAction <= 0 && !resetNeeded) {
             terminating = writeState(aircraft)
 
-            // Send action ready event after writing state to shared memory
+            // Send action ready event after writing state and action masks to shared memory
             sharedMemoryIPC.signalActionReady()
 //            println("${System.currentTimeMillis()} Set action ready")
 
@@ -135,13 +165,24 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
                 loopExited = true
                 return
             }
+
+            // Check for exit flag
+            if (sharedMemoryIPC.readBytes(1, 1)[0] == 1.byte) {
+                FileLog.warn("$envName PythonGymnasiumBridge", "Training finished, exiting simulator")
+                loopExited = true
+                stopServer()
+                return
+            }
+
 //            println("${System.currentTimeMillis()} Performing action")
             performAction(aircraft)
 
             framesToAction = FRAMES_PER_ACTION
+            lastActionTime = System.currentTimeMillis()
         }
 
-        if (framesToAction < -100000000) {
+        // Max 5 minutes of waiting before considering as deadlocked
+        if ((System.currentTimeMillis() - lastActionTime) > 5 * 60 * 1000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"
@@ -170,7 +211,15 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             assignedCallsigns.add(callsign)
         }
 
-        val acRewards = rewardHandler.rewardStep(agentIdToAircraft)
+        val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT || CHECK_WAKE_CONFLICT) {
+            // Conflict check
+            conflictManager.getConflictsRL(ImmutableArray(agentIdToAircraft.filterNotNull().toGdxArray()))
+        } else GdxArray()
+        val predictedConflicts = if (CHECK_TRAJECTORY_CONFLICT) {
+            trajectorySystemInterval.trajectoryManager.checkTrajectoryConflictsRL(trajectorySystemInterval.trajectoryTimeStates)
+        } else GdxArray()
+
+        val acRewards = rewardHandler.rewardStep(agentIdToAircraft, aircraft, conflicts)
 
         val stateArray = ByteBuffer.allocate(MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT).order(ByteOrder.nativeOrder())
         val acToRemove = GdxArray<Int>()
@@ -178,9 +227,10 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             val currAircraft = agentIdToAircraft[currAgentID]
 
             if (currAircraft == null) {
-                stateArray.position(stateArray.position() + SIZE_PER_AIRCRAFT - 3)
+                stateArray.position(stateArray.position() + SIZE_PER_AIRCRAFT - 7)
                 stateArray.put(0)  // Aircraft does not exist
                 stateArray.put(0)  // Termination flag (NA)
+                stateArray.put(0)  // Action mask (NA)
             } else {
                 val currAcInfo = currAircraft[AircraftInfo.mapper]!!
                 val currPos = currAircraft[Position.mapper]!!
@@ -200,6 +250,7 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
                 } else if (!aircraft.containsKey(currAcInfo.icaoCallsign)) {
                     currShouldTerminate = 1
                     agentIdToAircraft[currAgentID] = null
+                    landedInCurrentSession++
                 }
 
                 // Reward, ICAO type, x, y, alt, ias, track, track rate, vertical speed, cleared alt, cleared hdg, cleared IAS, LOC cap, mask
@@ -221,10 +272,37 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
                 stateArray.put(1)  // Aircraft exists
                 stateArray.put(currShouldTerminate)
                 nonTerminateCount += 1 - currShouldTerminate
+                var altMask = 15
+                val ongoingConflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
+                if (ongoingConflict != null) for (predConflict in predictedConflicts) {
+                    if (predConflict.aircraft1 != currAircraft && predConflict.aircraft2 != currAircraft) continue
+                    if (predConflict.advanceTimeS > TRAJECTORY_CHECK_MAX_TIME_S) continue
+
+                    // Masking rules:
+                    // If aircraft is not currently in conflict, and a conflict is predicted on current trajectory that:
+                    // 1. Occurs at about the same altitude as cleared altitude, mask the "no change" action
+                    // 2. Occurs at lower altitude than cleared altitude (which is above current aircraft altitude), mask the "+1000" and "no change" actions
+                    // 3. Occurs at higher altitude than cleared altitude (which is below current aircraft altitude), mask the "-3000", "-1000" and "no change action"
+                    if (abs(predConflict.altFt - currPrevClearance.clearedAlt) <= 25) altMask -= 2
+                    else if (predConflict.altFt < currPrevClearance.clearedAlt) altMask -= 3
+                    else if (predConflict.altFt > currPrevClearance.clearedAlt) altMask -= 14
+
+                    break
+                }
+                stateArray.put(altMask.byte)
             }
 
             stateArray.put(currAgentID.byte)
+            stateArray.position(stateArray.position() + 3)  // 3 bytes padding
         }
+
+        // Write miscellaneous metrics
+        sharedMemoryIPC.setFloat(4, landedInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(8, rewardHandler.aircraftConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(12, rewardHandler.mvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(16, rewardHandler.wakeConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+
+        // Copy all aircraft states
         sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)
 
         // Action waiting flag
@@ -259,11 +337,41 @@ class PythonGymnasiumBridge(envId: String, evalMode: Boolean): GymnasiumBridge {
             val targetAircraft = agentIdToAircraft[currAgentID] ?: continue
 
             if (bytes[instructionStartOffset + 4] != 1.byte || targetAircraft.has(LocalizerCaptured.mapper)) continue  // No clearance required
-            val clearedHdg = (sharedMemoryIPC.readShort(instructionStartOffset) * HDG_ACTION_MULTIPLIER).toShort()
-            val clearedAlt = bytes[instructionStartOffset + 2] * ALT_ACTION_MULTIPLIER + ALT_ACTION_ADDER
-            val clearedIas = (bytes[instructionStartOffset + 3] * SPD_ACTION_MULTIPLIER + SPD_ACTION_ADDER).toShort()
+            if (targetAircraft.has(LocalizerCaptured.mapper) || targetAircraft.has(LandingRoll.mapper)) continue
 
             val prevClearance = getLatestClearanceState(targetAircraft)!!
+            val prevHdg = prevClearance.vectorHdg ?: throw NullPointerException("$prevClearance, ${targetAircraft[Altitude.mapper]?.altitudeFt} ${targetAircraft[Position.mapper]?.x} ${targetAircraft[Position.mapper]?.y}")
+            val prevAlt = prevClearance.clearedAlt
+            val prevIas = prevClearance.clearedIas
+
+            val deltaHdg = when (val opt = sharedMemoryIPC.readShort(instructionStartOffset).toInt()) {
+                0 -> -45f
+                1 -> -20f
+                2 -> -10f
+                3 -> 0f
+                4 -> 10f
+                5 -> 20f
+                6 -> 45f
+                else -> throw IllegalArgumentException("Unexpected hdg action $opt")
+            }
+            val deltaAlt = when (val opt = bytes[instructionStartOffset + 2].toInt()) {
+                0 -> -3000
+                1 -> -1000
+                2 -> 0
+                3 -> 1000
+                else -> throw IllegalArgumentException("Unexpected alt action $opt")
+            }
+            val deltaIas = when (val opt = bytes[instructionStartOffset + 3].toInt()) {
+                0 -> -30
+                1 -> -10
+                2 -> 0
+                3 -> 10
+                else -> throw IllegalArgumentException("Unexpected ias action $opt")
+            }
+
+            val clearedHdg = modulateHeading(prevHdg + deltaHdg).roundToInt().toShort()
+            val clearedAlt = MathUtils.clamp(prevAlt + deltaAlt, 2000, 15000)
+            val clearedIas = MathUtils.clamp(prevIas + deltaIas, 160, 250).toShort()
             val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas
 
             if (changed) {

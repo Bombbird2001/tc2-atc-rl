@@ -34,6 +34,7 @@ class ConflictManager {
 
     fun getConflictsRL(aircraftArray: ImmutableArray<Entity>): GdxArray<Conflict> {
         conflicts.clear()
+        potentialConflicts.clear()
 
         val startingAlt = getConflictStartAltitude()
         val conflictLevels: Array<GdxArray<Entity>> = Array(ceil((MAX_ALT + 1500f) / VERT_SEP).roundToInt() - startingAlt / VERT_SEP) {
@@ -48,6 +49,9 @@ class ConflictManager {
 
         // Check aircraft separation with one another
         if (CHECK_AIRCRAFT_CONFLICT) checkAircraftSeparationMinimaConflict(conflictLevels)
+
+        // Check wake conflicts
+        if (CHECK_WAKE_CONFLICT) wakeManager.checkWakeConflicts(aircraftArray, conflicts)
 
         // Check MVA, restricted areas
         if (CHECK_MVA_CONFLICT) checkMVARestrictedConflict(aircraftArray)

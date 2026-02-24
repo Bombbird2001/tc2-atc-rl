@@ -10,6 +10,7 @@ import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.GAME
+import com.bombbird.terminalcontrol2.global.MAX_AIRCRAFT_ON_MAP
 import com.bombbird.terminalcontrol2.global.SPAWN_INTERVAL_S
 import com.bombbird.terminalcontrol2.global.THUNDERSTORM_TAKEOFF_PROTECTION_DIST_NM
 import com.bombbird.terminalcontrol2.global.WAIT_BETWEEN_SPAWNS
@@ -68,58 +69,57 @@ class TrafficSystemInterval: IntervalSystem(1f) {
             val airportArrivalStats = arrivalStatsFamilyEntities.getEntities()
             trafficMode = TrafficMode.ARRIVALS_TO_CONTROL
             when (trafficMode) {
-//                TrafficMode.NORMAL -> {
-//                    // Arrival spawning timer - normal traffic mode only
-//                    arrivalSpawnTimerS -= interval
-//                    if (arrivalSpawnTimerS < 0) {
-//                        val arrivalCount = arrivalFamilyEntities.getEntities().filter { it[FlightType.mapper]?.type == FlightType.ARRIVAL }.size
-//                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
-//                        arrivalSpawnTimerS = 90f - 10 * (trafficValue - arrivalCount)
-//                        arrivalSpawnTimerS = MathUtils.clamp(arrivalSpawnTimerS, 50f, 80f)
-//                        if (arrivalCount < trafficValue.toInt()) createRandomArrival(Entries(airports).map { it.value }, this)
-//                    }
-//                }
+                TrafficMode.NORMAL -> {
+                    // Arrival spawning timer - normal traffic mode only
+                    arrivalSpawnTimerS -= interval
+                    if (arrivalSpawnTimerS < 0) {
+                        val arrivalCount = arrivalFamilyEntities.getEntities().filter { it[FlightType.mapper]?.type == FlightType.ARRIVAL }.size
+                        // Min 50sec for >= 4 planes diff, max 80sec for <= 1 plane diff
+                        arrivalSpawnTimerS = 90f - 10 * (trafficValue - arrivalCount)
+                        arrivalSpawnTimerS = MathUtils.clamp(arrivalSpawnTimerS, 50f, 80f)
+                        if (arrivalCount < trafficValue.toInt()) createRandomArrival(Entries(airports).map { it.value }, this)
+                    }
+                }
                 TrafficMode.ARRIVALS_TO_CONTROL -> {
                     for (i in 0 until airportArrivalStats.size()) {
                         val arptEntity = airportArrivalStats[i]
                         if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
                         val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-                        arptArrStats.targetTrafficValue = AIRCRAFT_TO_SPAWN
+                        arptArrStats.targetTrafficValue = MAX_AIRCRAFT_ON_MAP
                         arptArrStats.arrivalSpawnTimer -= interval
                         if (arptArrStats.arrivalSpawnTimer > 0 && WAIT_BETWEEN_SPAWNS) continue
 
                         val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: continue
                         if (arptId != 0.byte) continue
-//                        val arrivalCount = arrivalFamilyEntities.getEntities().filter {
-//                            it[FlightType.mapper]?.type == FlightType.ARRIVAL && it[ArrivalAirport.mapper]?.arptId == arptId
-//                        }.size
+                        val arrivalCount = arrivalFamilyEntities.getEntities().filter {
+                            it[FlightType.mapper]?.type == FlightType.ARRIVAL && it[ArrivalAirport.mapper]?.arptId == arptId
+                        }.size
                         // 60 sec spawn interval
                         arptArrStats.arrivalSpawnTimer = SPAWN_INTERVAL_S
 //                        arptArrStats.arrivalSpawnTimer = MathUtils.clamp(arptArrStats.arrivalSpawnTimer, 50f, 80f)
-                        if (baselineAI.spawnCount >= arptArrStats.targetTrafficValue) continue
+                        if (arrivalCount >= arptArrStats.targetTrafficValue || baselineAI.spawnCount >= AIRCRAFT_TO_SPAWN) continue
                         createRandomArrivalForAirport(arptEntity, this)
                         baselineAI.incrementSpawnCount()
 //                        FileLog.info("TrafficSystem", "${arptEntity[AirportInfo.mapper]?.icaoCode} arrivals: ${arrivalCount + 1}")
                     }
                 }
-//                TrafficMode.FLOW_RATE -> {
-//                    for (i in 0 until airportArrivalStats.size()) {
-//                        val arptEntity = airportArrivalStats[i]
-//                        if (arptEntity[AirportInfo.mapper]?.icaoCode != "TCWS") continue
-//                        if (arptEntity.has(ArrivalClosed.mapper)) continue
-//                        val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
-//                        arptArrStats.arrivalSpawnTimer -= interval
-//                        if (arptArrStats.arrivalSpawnTimer > 0) continue
-//
-//                        arptArrStats.arrivalSpawnTimer = -arptArrStats.previousArrivalSpawnOffsetS // Subtract the additional (or less) time before spawning previous aircraft
-//                        val defaultRate = 3600f / arptArrStats.targetTrafficValue // 3600sec = 1hr
-//                        arptArrStats.arrivalSpawnTimer += defaultRate // Add the constant rate timing
-//                        arptArrStats.previousArrivalSpawnOffsetS = defaultRate * MathUtils.random(-0.1f, 0.1f)
-//                        arptArrStats.arrivalSpawnTimer += arptArrStats.previousArrivalSpawnOffsetS
-//                        createRandomArrivalForAirport(arptEntity, this)
-//                        FileLog.info("TrafficSystem", "Spawned arrival for airport ${arptEntity[AirportInfo.mapper]?.icaoCode}")
-//                    }
-//                }
+                TrafficMode.FLOW_RATE -> {
+                    for (i in 0 until airportArrivalStats.size()) {
+                        val arptEntity = airportArrivalStats[i]
+                        if (arptEntity.has(ArrivalClosed.mapper)) continue
+                        val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
+                        arptArrStats.arrivalSpawnTimer -= interval
+                        if (arptArrStats.arrivalSpawnTimer > 0) continue
+
+                        arptArrStats.arrivalSpawnTimer = -arptArrStats.previousArrivalSpawnOffsetS // Subtract the additional (or less) time before spawning previous aircraft
+                        val defaultRate = 3600f / arptArrStats.targetTrafficValue // 3600sec = 1hr
+                        arptArrStats.arrivalSpawnTimer += defaultRate // Add the constant rate timing
+                        arptArrStats.previousArrivalSpawnOffsetS = defaultRate * MathUtils.random(-0.1f, 0.1f)
+                        arptArrStats.arrivalSpawnTimer += arptArrStats.previousArrivalSpawnOffsetS
+                        createRandomArrivalForAirport(arptEntity, this)
+                        FileLog.info("TrafficSystem", "Spawned arrival for airport ${arptEntity[AirportInfo.mapper]?.icaoCode}")
+                    }
+                }
                 else -> FileLog.warn("TrafficSystem", "Invalid traffic mode $trafficMode")
             }
 
@@ -268,6 +268,7 @@ class TrafficSystemInterval: IntervalSystem(1f) {
         }
 
         // Despawn checker
+        /*
         val checkDespawn = despawnFamilyEntities.getEntities()
         for (i in 0 until checkDespawn.size()) {
             checkDespawn[i]?.apply {
@@ -288,13 +289,14 @@ class TrafficSystemInterval: IntervalSystem(1f) {
                 despawnAircraft(this)
             }
         }
+         */
 
         // Update the levels of each conflict-able entity
         updateConflictLevels()
 
         // Traffic separation checking
-        val conflictAble = conflictAbleFamilyEntities.getEntities()
-        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
+//        val conflictAble = conflictAbleFamilyEntities.getEntities()
+//        conflictManager.checkAllConflicts(conflictLevels, conflictAble)
     }
 
     /** Creates the conflict level array upon loading world data (MAX_ALT required) */

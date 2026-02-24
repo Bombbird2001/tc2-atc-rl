@@ -1,5 +1,6 @@
 package com.bombbird.terminalcontrol2.traffic.conflict
 
+import com.badlogic.gdx.utils.ArrayMap.Entries
 import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.MathUtils
@@ -21,6 +22,7 @@ import ktx.ashley.remove
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.set
+import ktx.collections.toGdxArray
 import ktx.math.plus
 import ktx.math.times
 import kotlin.math.*
@@ -139,9 +141,7 @@ class TrajectoryManager {
         }
     }
 
-    /**
-     * Frees [allTrajectoryPoints] back to the pool
-     */
+    /** Frees [allTrajectoryPoints] back to the pool */
     fun freePooledTrajectoryPoints(allTrajectoryPoints: Array<Array<GdxArray<TrajectoryPoint>>>) {
         for (i in allTrajectoryPoints.indices) {
             for (j in 0 until allTrajectoryPoints[i].size) {
@@ -150,6 +150,28 @@ class TrajectoryManager {
                 }
             }
         }
+    }
+
+    /** Frees [allTrajectoryPoints] back to the pool */
+    fun freePooledTrajectoryPoints(allTrajectoryPoints: GdxArray<TrajectoryPoint>) {
+        for (i in 0 until allTrajectoryPoints.size) {
+            trajectoryPool.free(allTrajectoryPoints[i])
+        }
+    }
+
+    /** Frees a [trajectoryPoint] back to the pool */
+    fun freePooledTrajectoryPoint(trajectoryPoint: TrajectoryPoint) {
+        trajectoryPool.free(trajectoryPoint)
+    }
+
+    fun checkTrajectoryConflictsRL(allTrajectoryPoints: Array<Array<GdxArray<TrajectoryPoint>>>): GdxArray<PredictedConflict> {
+        // Clear all conflicts
+        predictedConflicts.clear()
+
+        // Check aircraft separation conflict
+        predictedConflicts.putAll(checkAllTrajectoryPointConflicts(allTrajectoryPoints))
+
+        return Entries(predictedConflicts).map { it.value }.toGdxArray()
     }
 
     /**
@@ -346,21 +368,27 @@ class TrajectoryManager {
     }
 
     private fun isTrajectoryClearOfStorm(trajectory: GdxArray<TrajectoryPoint>): Boolean {
+        var inStorm = false
         for (i in 0 until trajectory.size) {
             val point = trajectory[i].entity
             val pos = point[Position.mapper] ?: continue
             val alt = point[Altitude.mapper]?.altitudeFt ?: continue
 
             val zones = getAllZoneCountAtPosition(pos.x, pos.y, alt, 2)
-            if (zones >= 1) return false
+            if (zones >= 1) {
+                inStorm = true
+                break
+            }
         }
 
-        return true
+        freePooledTrajectoryPoints(trajectory)
+
+        return !inStorm
     }
 
     /** Re-clear altitude for conflicts that has not been resolved */
     private fun resolveACCConflicts() {
-        val aircraftConflicts = ArrayMap.Entries(predictedConflicts).filter { it.value.altFt >= getACCStartAltitude() }.map { it.value }
+        val aircraftConflicts = Entries(predictedConflicts).filter { it.value.altFt >= getACCStartAltitude() }.map { it.value }
 
         for (conflict in aircraftConflicts) {
             // Ignore MVA conflicts
@@ -484,6 +512,7 @@ class TrajectoryManager {
     private fun checkNewAltitudeClearOfConflict(aircraft: Entity, newAltitude: Int,
                                                 allTrajectoryPoints: Array<Array<GdxArray<TrajectoryPoint>>>): Boolean {
         val traj = calculateTrajectory(aircraft, newAltitude)
+        var conflictFound = false
         for (i in 0 until traj.size) {
             val point = traj[i]
             val alt = point.entity[Altitude.mapper]?.altitudeFt ?: continue
@@ -494,7 +523,8 @@ class TrajectoryManager {
                 val entry = checkTrajectoryPointConflict(point, allPointsInCurrentTimePoint[altLevel][j])
                 if (entry != null) {
                     // Conflict exists
-                    return false
+                    conflictFound = true
+                    break
                 }
             }
             // If a layer exists above, check with each point in the above layer
@@ -504,7 +534,8 @@ class TrajectoryManager {
                     val entry2 = checkTrajectoryPointConflict(point, abovePoints[k])
                     if (entry2 != null) {
                         // Conflict exists
-                        return false
+                        conflictFound = true
+                        break
                     }
                 }
             }
@@ -515,13 +546,16 @@ class TrajectoryManager {
                     val entry2 = checkTrajectoryPointConflict(point, belowPoints[k])
                     if (entry2 != null) {
                         // Conflict exists
-                        return false
+                        conflictFound = true
+                        break
                     }
                 }
             }
         }
 
-        return true
+        freePooledTrajectoryPoints(traj)
+
+        return !conflictFound
     }
 
     /**

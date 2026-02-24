@@ -5,12 +5,26 @@ package com.bombbird.terminalcontrol2.lwjgl3
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.bombbird.terminalcontrol2.TerminalControl2
+import com.bombbird.terminalcontrol2.global.EVAL_AIRCRAFT_CONFLICT_PENALTY
+import com.bombbird.terminalcontrol2.global.EVAL_GOAL_REWARD
+import com.bombbird.terminalcontrol2.global.EVAL_MVA_CONFLICT_PENALTY
+import com.bombbird.terminalcontrol2.global.EVAL_WAKE_CONFLICT_PENALTY
 import com.bombbird.terminalcontrol2.integrations.StubAchievementHandler
 import com.bombbird.terminalcontrol2.integrations.StubDiscordHandler
 import com.bombbird.terminalcontrol2.sounds.StubTextToSpeech
 
 /** Launches the desktop (LWJGL3) application. */
-fun main() {
+fun main(args: Array<String>) {
+    if (args.size != 4) {
+        throw IllegalArgumentException("Must pass arguments for goalReward, mvaConflictPenalty, aircraftConflictPenalty and wakeConflictPenalty")
+    }
+
+    // Very bad way to set the value, but it's fine since this is only for manual visualisation
+    EVAL_GOAL_REWARD = args[0].toFloat()
+    EVAL_MVA_CONFLICT_PENALTY = args[1].toFloat()
+    EVAL_AIRCRAFT_CONFLICT_PENALTY = args[2].toFloat()
+    EVAL_WAKE_CONFLICT_PENALTY = args[3].toFloat()
+
     Lwjgl3Application(TerminalControl2(DesktopFileHandler(), StubTextToSpeech, StubDiscordHandler, StubAchievementHandler),
         Lwjgl3ApplicationConfiguration().apply {
             setTitle("Terminal Control 2")

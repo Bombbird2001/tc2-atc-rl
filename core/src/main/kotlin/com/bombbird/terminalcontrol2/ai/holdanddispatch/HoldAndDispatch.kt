@@ -307,12 +307,24 @@ class HoldAndDispatch(
 
         stepCountdown--
         if (stepCountdown < 0) {
-            CsvWriter.writeToRewards(
-                episodeCounter, episodeStepCounter,
-                rewardHandler.rewardStep(acArray, gs.aircraft, getConflicts())
-            )
+            val conflicts = getConflicts()
+            var acConflicts = 0
+            var mvaConflicts = 0
+            var wakeConflicts = 0
+            for (conflict in conflicts) {
+                if (conflict.entity2 != null) {
+                    acConflicts++
+                } else if (conflict.reason == Conflict.MVA) {
+                    mvaConflicts++
+                } else if (conflict.reason == Conflict.WAKE_INFRINGE) {
+                    wakeConflicts++
+                }
+            }
 
-            CsvWriter.writeToActiveCount(episodeCounter, episodeStepCounter, aircraft.size, spawnCount)
+            CsvWriter.writeStepMetrics(
+                episodeCounter, episodeStepCounter, aircraft.size, spawnCount, mvaConflicts, acConflicts,
+                wakeConflicts,rewardHandler.rewardStep(acArray, gs.aircraft, conflicts)
+            )
 
             stepCountdown = STEP_INTERVAL
             episodeStepCounter++

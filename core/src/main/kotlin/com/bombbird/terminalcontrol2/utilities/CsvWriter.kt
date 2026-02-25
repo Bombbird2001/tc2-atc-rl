@@ -12,8 +12,7 @@ object CsvWriter {
     private const val CONFLICT_FILE = "conflict.csv"
     private const val MVA_CONFLICT_FILE = "mva_restricted.csv"
     private const val ARRIVAL_RATE_FILE = "arrival_rate.csv"
-    private const val REWARDS_FILE = "rewards.csv"
-    private const val ACTIVE_COUNT_FILE = "active_count.csv"
+    private const val STEP_METRICS_FILE = "step_metrics.csv"
     private var RUN_DIR = ""
 
     fun setRunDirectory(runDirectory: String) {
@@ -76,19 +75,16 @@ object CsvWriter {
         )
     }
 
-    fun writeToRewards(episode: Int, step: Int, rewards: Array<Float?>) {
+    fun writeStepMetrics(episode: Int, step: Int, activeCount: Int, spawnCount: Int, mvaConflicts: Int,
+                         acConflicts: Int, wakeConflicts: Int, rewards: Array<Float?>
+    ) {
         writeToCsv(
-            WRITE_DIR + RUN_DIR + REWARDS_FILE,
-            listOf("Episode", "Step", *rewards.withIndex().map { "ac${it.index}" }.toTypedArray()),
-            listOf(episode, step, *rewards)
-        )
-    }
-
-    fun writeToActiveCount(episode: Int, step: Int, count: Int, spawnCount: Int) {
-        writeToCsv(
-            WRITE_DIR + RUN_DIR + ACTIVE_COUNT_FILE,
-            listOf("Episode", "Step", "Active count", "Total spawned"),
-            listOf(episode, step, count, spawnCount)
+            WRITE_DIR + RUN_DIR + STEP_METRICS_FILE,
+            listOf(
+                "Episode", "Step", "Active count", "Total spawned", "MVA conflicts", "Aircraft conflicts", "Wake conflicts",
+                *rewards.withIndex().map { "ac${it.index}" }.toTypedArray()
+            ),
+            listOf(episode, step, activeCount, spawnCount, mvaConflicts, acConflicts, wakeConflicts, *rewards)
         )
     }
 

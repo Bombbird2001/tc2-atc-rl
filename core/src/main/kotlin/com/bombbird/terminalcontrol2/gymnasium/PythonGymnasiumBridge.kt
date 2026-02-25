@@ -16,7 +16,7 @@ import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
-import com.bombbird.terminalcontrol2.global.CHECK_TRAJECTORY_CONFLICT
+import com.bombbird.terminalcontrol2.global.ENABLE_TRAJECTORY_ALTITUDE_MASKING
 import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.SIMPLIFIED_LOC_CAP
@@ -215,7 +215,7 @@ class PythonGymnasiumBridge(
             // Conflict check
             conflictManager.getConflictsRL(ImmutableArray(agentIdToAircraft.filterNotNull().toGdxArray()))
         } else GdxArray()
-        val predictedConflicts = if (CHECK_TRAJECTORY_CONFLICT) {
+        val predictedConflicts = if (ENABLE_TRAJECTORY_ALTITUDE_MASKING) {
             trajectorySystemInterval.trajectoryManager.checkTrajectoryConflictsRL(trajectorySystemInterval.trajectoryTimeStates)
         } else GdxArray()
 
@@ -274,7 +274,7 @@ class PythonGymnasiumBridge(
                 nonTerminateCount += 1 - currShouldTerminate
                 var altMask = 15
                 val ongoingConflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
-                if (ongoingConflict != null) for (predConflict in predictedConflicts) {
+                if (ongoingConflict == null) for (predConflict in predictedConflicts) {
                     if (predConflict.aircraft1 != currAircraft && predConflict.aircraft2 != currAircraft) continue
                     if (predConflict.advanceTimeS > TRAJECTORY_CHECK_MAX_TIME_S) continue
 

@@ -280,7 +280,7 @@ class GameServer private constructor(
                 envId, tfcSystemInterval.conflictManager, trajSystemInterval, rewardEval,
                 goalReward, mvaConflictPenalty,aircraftConflictPenalty, wakeConflictPenalty
             )
-            initiateServer(airportToHost, saveId, tfcSystemInterval)
+            initiateServer(airportToHost, saveId, tfcSystemInterval, trajSystemInterval)
         } else {
             pythonGymBridge = StubGymnasiumBridge
             loadGameTest()
@@ -310,7 +310,10 @@ class GameServer private constructor(
     }
 
     /** Initialises game world where [mainName] is the ICAO code of the main airport */
-    private fun loadGame(mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval) {
+    private fun loadGame(
+        mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval,
+        trajectorySystemInterval: TrajectorySystemInterval
+    ) {
         this.mainName = mainName
         loadAircraftData()
         loadDisallowedCallsigns()
@@ -323,7 +326,6 @@ class GameServer private constructor(
         engine.addSystem(ControlStateSystemInterval())
         engine.addSystem(trafficSystemInterval)
         engine.addSystem(DataSystem())
-        val trajectorySystemInterval = TrajectorySystemInterval()
         engine.addSystem(trajectorySystemInterval)
         engine.addSystem(WeatherSystemInterval())
 
@@ -350,13 +352,16 @@ class GameServer private constructor(
      * @param mainName the name of the main airport in the map
      * @param saveId the ID of the save file to load, or null if nothing to load
      */
-    private fun initiateServer(mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval) {
+    private fun initiateServer(
+        mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval,
+        trajectorySystemInterval: TrajectorySystemInterval
+    ) {
         GAME.gameServer = this
         thread(name = GAME_SERVER_THREAD_NAME) {
             try {
                 FileLog.info("GameServer", "Starting game server")
                 saveID = saveId
-                loadGame(mainName, saveId, trafficSystemInterval)
+                loadGame(mainName, saveId, trafficSystemInterval, trajectorySystemInterval)
                 val serverStartSuccess = startNetworkingServer()
                 FileLog.info("GameServer", networkServer.getConnectionStatus())
                 if (!serverStartSuccess) {

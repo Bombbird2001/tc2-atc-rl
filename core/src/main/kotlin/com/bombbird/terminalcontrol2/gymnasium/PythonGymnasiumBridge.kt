@@ -344,14 +344,13 @@ class PythonGymnasiumBridge(
             val prevAlt = prevClearance.clearedAlt
             val prevIas = prevClearance.clearedIas
 
+            // Reduced action space v1
             val deltaHdg = when (val opt = sharedMemoryIPC.readShort(instructionStartOffset).toInt()) {
                 0 -> -45f
-                1 -> -20f
-                2 -> -10f
-                3 -> 0f
-                4 -> 10f
-                5 -> 20f
-                6 -> 45f
+                1 -> -10f
+                2 -> 0f
+                3 -> 10f
+                4 -> 45f
                 else -> throw IllegalArgumentException("Unexpected hdg action $opt")
             }
             val deltaAlt = when (val opt = bytes[instructionStartOffset + 2].toInt()) {
@@ -359,6 +358,7 @@ class PythonGymnasiumBridge(
                 1 -> -1000
                 2 -> 0
                 3 -> 1000
+                4 -> 3000
                 else -> throw IllegalArgumentException("Unexpected alt action $opt")
             }
             val deltaIas = when (val opt = bytes[instructionStartOffset + 3].toInt()) {
@@ -366,8 +366,35 @@ class PythonGymnasiumBridge(
                 1 -> -10
                 2 -> 0
                 3 -> 10
+                4 -> 30
                 else -> throw IllegalArgumentException("Unexpected ias action $opt")
             }
+
+            // Reduced action space v3
+//            val deltaHdg = when (val opt = sharedMemoryIPC.readShort(instructionStartOffset).toInt()) {
+//                0 -> -45f
+//                1 -> -20f
+//                2 -> -10f
+//                3 -> 0f
+//                4 -> 10f
+//                5 -> 20f
+//                6 -> 45f
+//                else -> throw IllegalArgumentException("Unexpected hdg action $opt")
+//            }
+//            val deltaAlt = when (val opt = bytes[instructionStartOffset + 2].toInt()) {
+//                0 -> -3000
+//                1 -> -1000
+//                2 -> 0
+//                3 -> 1000
+//                else -> throw IllegalArgumentException("Unexpected alt action $opt")
+//            }
+//            val deltaIas = when (val opt = bytes[instructionStartOffset + 3].toInt()) {
+//                0 -> -30
+//                1 -> -10
+//                2 -> 0
+//                3 -> 10
+//                else -> throw IllegalArgumentException("Unexpected ias action $opt")
+//            }
 
             val clearedHdg = modulateHeading(prevHdg + deltaHdg).roundToInt().toShort()
             val clearedAlt = MathUtils.clamp(prevAlt + deltaAlt, 2000, 15000)

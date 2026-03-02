@@ -231,6 +231,7 @@ const val TRAJECTORY_CHECK_MAX_TIME_S = 90
 const val CLEARANCE_CHANGE_PENALTY = 0.03f
 const val PER_STEP_PENALTY = 0.04f
 const val LOC_PROX_PENALTY = 0.04f
+const val RL_HORIZONTAL_SEP_MINIMA_MULT = 1.25f
 const val MAX_SPAWN_DIST_NM = 60
 const val MIN_SPAWN_DIST_NM = 5
 const val DIST_SCORE_A = -0.8f

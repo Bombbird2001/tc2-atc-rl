@@ -154,8 +154,13 @@ class RewardHandler(
             val conflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
             if (conflict != null) {
                 if (conflict.entity2 != null) {
-                    acReward -= aircraftConflictPenalty
-                    aircraftConflictCount++
+                    if (conflict.reason == Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN) {
+                        // Use stricter rules for calculating rewards
+                        acReward -= aircraftConflictPenalty
+                    } else {
+                        // But the actual rules when evaluating conflict rate
+                        aircraftConflictCount++
+                    }
                 } else {
                     if (conflict.reason == Conflict.WAKE_INFRINGE) {
                         acReward -= wakeConflictPenalty

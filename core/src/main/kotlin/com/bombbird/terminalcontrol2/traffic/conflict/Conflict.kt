@@ -23,6 +23,7 @@ class Conflict(val entity1: Entity, val entity2: Entity?, val minAltSectorIndex:
         const val WAKE_INFRINGE: Byte = 7
         const val STORM: Byte = 8
         const val EMERGENCY_SEPARATION_CONFLICT: Byte = 9
+        const val RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN: Byte = 10  // Used to mark conflicts that are only considered to be conflicts for the RL reward - may not be an actual conflict
 
         /** Returns a default empty conflict object when a proper conflict object cannot be de-serialised */
         private fun getEmptyConflict(): Conflict {

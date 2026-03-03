@@ -163,8 +163,9 @@ class RewardHandler(
                     }
                 } else {
                     if (conflict.reason == Conflict.WAKE_INFRINGE) {
-                        acReward -= wakeConflictPenalty
                         wakeConflictCount++
+                    } else if (conflict.reason == Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN) {
+                        acReward -= wakeConflictPenalty
                     } else {
                         acReward -= mvaConflictPenalty
                         mvaConflictCount++

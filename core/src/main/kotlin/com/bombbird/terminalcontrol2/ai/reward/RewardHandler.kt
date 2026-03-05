@@ -151,8 +151,7 @@ class RewardHandler(
             acReward -= PER_STEP_PENALTY
 
             // Assign negative reward for conflict involving this aircraft
-            val conflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
-            if (conflict != null) {
+            conflicts.filter { it.entity1 == currAircraft || it.entity2 == currAircraft }.forEach { conflict ->
                 if (conflict.entity2 != null) {
                     if (conflict.reason == Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN) {
                         // Use stricter rules for calculating rewards

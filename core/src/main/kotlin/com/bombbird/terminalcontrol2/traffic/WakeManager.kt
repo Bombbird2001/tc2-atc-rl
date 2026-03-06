@@ -6,7 +6,7 @@ import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.MAX_ALT
-import com.bombbird.terminalcontrol2.global.RL_WAKE_SEP_MINIMA_MULT
+import com.bombbird.terminalcontrol2.global.RL_WAKE_SEP_MINIMA_MARGIN
 import com.bombbird.terminalcontrol2.global.VERT_SEP
 import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
@@ -47,7 +47,7 @@ class WakeManager {
              * @param sector the level sector containing wake zones to check
              * @return true if aircraft is infringing on wake zones, else false
              */
-            fun checkWakeConflictForAircraftInSector(sector: GdxArray<WakeZone>, distMultiplier: Float = 1f): Boolean {
+            fun checkWakeConflictForAircraftInSector(sector: GdxArray<WakeZone>, distAdd: Float = 0f): Boolean {
                 for (i in 0 until sector.size) sector[i]?.apply {
                     val wakeInfo = entity[WakeInfo.mapper] ?: return@apply
                     val wakeAlt = entity[Altitude.mapper] ?: return@apply
@@ -68,7 +68,7 @@ class WakeManager {
                     if (alt.altitudeFt > wakeAlt.altitudeFt + 90 || alt.altitudeFt < wakeAlt.altitudeFt - 950) return@apply
                     // Check that distance of the wake zone is smaller than required separation
                     val reqDist = WakeMatrix.getDistanceRequired(wakeInfo.leadingWake, wakeInfo.leadingRecat,
-                        acInfo.aircraftPerf.wakeCategory, acInfo.aircraftPerf.recat) * distMultiplier
+                        acInfo.aircraftPerf.wakeCategory, acInfo.aircraftPerf.recat) + distAdd
 
                     // Check if aircraft is physically inside the wake zone
                     if (!contains(pos.x, pos.y)) return@apply
@@ -109,7 +109,7 @@ class WakeManager {
             var wakeEncountered = false
 
             // Check wake zones in this sector
-            if (sector >= 0 && sector < wakeLevels.size && checkWakeConflictForAircraftInSector(wakeLevels[sector], distMultiplier = RL_WAKE_SEP_MINIMA_MULT)) {
+            if (sector >= 0 && sector < wakeLevels.size && checkWakeConflictForAircraftInSector(wakeLevels[sector], distAdd = RL_WAKE_SEP_MINIMA_MARGIN)) {
                 currentConflicts.add(Conflict(it, null, null, 3f, Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN))
 
                 if (checkWakeConflictForAircraftInSector(wakeLevels[sector])) {
@@ -119,7 +119,7 @@ class WakeManager {
             }
 
             // Check wake zones in the sector above
-            if (sector + 1 >= 0 && sector + 1 < wakeLevels.size && checkWakeConflictForAircraftInSector(wakeLevels[sector + 1], distMultiplier = RL_WAKE_SEP_MINIMA_MULT)) {
+            if (sector + 1 >= 0 && sector + 1 < wakeLevels.size && checkWakeConflictForAircraftInSector(wakeLevels[sector + 1], distAdd = RL_WAKE_SEP_MINIMA_MARGIN)) {
                 currentConflicts.add(Conflict(it, null, null, 3f, Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN))
 
                 if (checkWakeConflictForAircraftInSector(wakeLevels[sector + 1])) {

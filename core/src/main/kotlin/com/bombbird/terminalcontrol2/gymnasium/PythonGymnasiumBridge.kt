@@ -6,12 +6,16 @@ import com.badlogic.gdx.math.MathUtils
 import com.bombbird.terminalcontrol2.ai.reward.RewardHandler
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
+import com.bombbird.terminalcontrol2.components.ApproachInfo
+import com.bombbird.terminalcontrol2.components.CustomPosition
+import com.bombbird.terminalcontrol2.components.GlideSlopeCaptured
 import com.bombbird.terminalcontrol2.components.GroundTrack
 import com.bombbird.terminalcontrol2.components.IndicatedAirSpeed
 import com.bombbird.terminalcontrol2.components.LandingRoll
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
+import com.bombbird.terminalcontrol2.components.VisualCaptured
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
@@ -29,9 +33,11 @@ import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.byte
+import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
 import com.bombbird.terminalcontrol2.utilities.convertWorldAndRenderDeg
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.modulateHeading
+import com.bombbird.terminalcontrol2.utilities.pxToNm
 import ktx.ashley.get
 import ktx.ashley.has
 import ktx.collections.GdxArray
@@ -336,16 +342,25 @@ class PythonGymnasiumBridge(
 
             val targetAircraft = agentIdToAircraft[currAgentID] ?: continue
 
-            if (bytes[instructionStartOffset + 4] != 1.byte || targetAircraft.has(LocalizerCaptured.mapper)) continue  // No clearance required
-            if (targetAircraft.has(LocalizerCaptured.mapper) || targetAircraft.has(LandingRoll.mapper)) continue
+            if (bytes[instructionStartOffset + 4] != 1.byte) continue  // No clearance required
+            if (targetAircraft.has(LandingRoll.mapper)) continue
+
+            val isLocCap = targetAircraft.has(LocalizerCaptured.mapper)
+            val pos = targetAircraft.get(Position.mapper)!!
+            val appEntity = targetAircraft[GlideSlopeCaptured.mapper]?.gsApp ?: targetAircraft[LocalizerCaptured.mapper]?.locApp ?: targetAircraft[VisualCaptured.mapper]?.visApp
+            val rwyThrPos = appEntity?.get(ApproachInfo.mapper)?.rwyObj?.entity?.get(CustomPosition.mapper)
+            val distNm = rwyThrPos?.let {
+                pxToNm(calculateDistanceBetweenPoints(pos.x, pos.y, rwyThrPos.x, rwyThrPos.y))
+            } ?: 999f
 
             val prevClearance = getLatestClearanceState(targetAircraft)!!
-            val prevHdg = prevClearance.vectorHdg ?: throw NullPointerException("$prevClearance, ${targetAircraft[Altitude.mapper]?.altitudeFt} ${targetAircraft[Position.mapper]?.x} ${targetAircraft[Position.mapper]?.y}")
+            val prevHdg = prevClearance.vectorHdg
             val prevAlt = prevClearance.clearedAlt
             val prevIas = prevClearance.clearedIas
 
             // Reduced action space v1
-            val deltaHdg = when (val opt = sharedMemoryIPC.readShort(instructionStartOffset).toInt()) {
+            val deltaHdg = if (isLocCap) 0f
+            else when (val opt = sharedMemoryIPC.readShort(instructionStartOffset).toInt()) {
                 0 -> -45f
                 1 -> -10f
                 2 -> 0f
@@ -353,7 +368,8 @@ class PythonGymnasiumBridge(
                 4 -> 45f
                 else -> throw IllegalArgumentException("Unexpected hdg action $opt")
             }
-            val deltaAlt = when (val opt = bytes[instructionStartOffset + 2].toInt()) {
+            val deltaAlt = if (isLocCap) 0
+            else when (val opt = bytes[instructionStartOffset + 2].toInt()) {
                 0 -> -3000
                 1 -> -1000
                 2 -> 0
@@ -361,7 +377,7 @@ class PythonGymnasiumBridge(
                 4 -> 3000
                 else -> throw IllegalArgumentException("Unexpected alt action $opt")
             }
-            val deltaIas = when (val opt = bytes[instructionStartOffset + 3].toInt()) {
+            val deltaIas = if (isLocCap && distNm < 8) 0 else when (val opt = bytes[instructionStartOffset + 3].toInt()) {
                 0 -> -30
                 1 -> -10
                 2 -> 0
@@ -396,7 +412,7 @@ class PythonGymnasiumBridge(
 //                else -> throw IllegalArgumentException("Unexpected ias action $opt")
 //            }
 
-            val clearedHdg = modulateHeading(prevHdg + deltaHdg).roundToInt().toShort()
+            val clearedHdg = if (prevHdg == null) prevHdg else modulateHeading(prevHdg + deltaHdg).roundToInt().toShort()
             val clearedAlt = MathUtils.clamp(prevAlt + deltaAlt, 2000, 15000)
             val clearedIas = MathUtils.clamp(prevIas + deltaIas, 160, 250).toShort()
             val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas

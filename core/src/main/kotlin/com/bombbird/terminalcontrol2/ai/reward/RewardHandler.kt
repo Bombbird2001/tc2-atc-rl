@@ -4,9 +4,14 @@ import com.badlogic.ashley.core.Entity
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
+import com.bombbird.terminalcontrol2.components.ApproachInfo
+import com.bombbird.terminalcontrol2.components.CustomPosition
+import com.bombbird.terminalcontrol2.components.GlideSlopeCaptured
+import com.bombbird.terminalcontrol2.components.IndicatedAirSpeed
 import com.bombbird.terminalcontrol2.components.LandingRoll
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
+import com.bombbird.terminalcontrol2.components.VisualCaptured
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
@@ -19,6 +24,7 @@ import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_PENALTY
 import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_THRESHOLD_NM
 import com.bombbird.terminalcontrol2.global.ENABLE_PROXIMITY_SCORE
 import com.bombbird.terminalcontrol2.global.GAME
+import com.bombbird.terminalcontrol2.global.HIGH_APP_SPD_PENALTY
 import com.bombbird.terminalcontrol2.global.LOC_PROX_PENALTY
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
@@ -145,12 +151,26 @@ class RewardHandler(
 
                 // Discourage aircraft from loitering too long close to LOC
                 if (currLocCap == 0.byte && newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) acReward -= LOC_PROX_PENALTY
+
+                if (currLocCap == 1.byte) {
+                    val currIas = currAircraft[IndicatedAirSpeed.mapper]?.iasKt!!
+                    val appEntity = currAircraft[GlideSlopeCaptured.mapper]?.gsApp ?: currAircraft[LocalizerCaptured.mapper]?.locApp ?: currAircraft[VisualCaptured.mapper]?.visApp
+                    val rwyThrPos = appEntity?.get(ApproachInfo.mapper)?.rwyObj?.entity?.get(CustomPosition.mapper)
+                    if (rwyThrPos != null) {
+                        val distNm = pxToNm(calculateDistanceBetweenPoints(currPos.x, currPos.y, rwyThrPos.x, rwyThrPos.y))
+
+                        // Compute max allowed speed for distance from runway
+                        // Max 230 knots @9nm, linear down to 170 knots @3nm
+                        val maxSpd = max(140 + distNm * 10, 170f)
+                        if (distNm < 9.0f && maxSpd < currIas) acReward -= HIGH_APP_SPD_PENALTY
+                    }
+                }
             }
 
             // Constant per time step penalty
             acReward -= PER_STEP_PENALTY
 
-            // Assign negative reward for conflict involving this aircraft
+            // Assign negative reward for conflict(s) involving this aircraft
             conflicts.filter { it.entity1 == currAircraft || it.entity2 == currAircraft }.forEach { conflict ->
                 if (conflict.entity2 != null) {
                     if (conflict.reason == Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN) {

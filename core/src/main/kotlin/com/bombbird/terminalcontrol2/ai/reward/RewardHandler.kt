@@ -118,7 +118,12 @@ class RewardHandler(
             var acReward = acPrevClearance[i]?.let { prevClearance ->
                 val clearanceChangePenalty = (if (prevClearance.vectorHdg != currClearance.vectorHdg) CLEARANCE_CHANGE_PENALTY else 0f) +
                      (if (prevClearance.clearedAlt != currClearance.clearedAlt) CLEARANCE_CHANGE_PENALTY else 0f) +
-                     (if (prevClearance.clearedIas != currClearance.clearedIas) CLEARANCE_CHANGE_PENALTY else 0f)
+                     (
+                             if (prevClearance.clearedIas > currClearance.clearedIas) CLEARANCE_CHANGE_PENALTY
+                             else if (prevClearance.clearedIas < currClearance.clearedIas) {
+                                 CLEARANCE_CHANGE_PENALTY * (currClearance.clearedIas - prevClearance.clearedIas) / 5
+                             } else 0f
+                     )
                 -clearanceChangePenalty
             } ?: 0f
             acPrevClearance[i] = currClearance.copy()
@@ -152,19 +157,19 @@ class RewardHandler(
                 // Discourage aircraft from loitering too long close to LOC
                 if (currLocCap == 0.byte && newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) acReward -= LOC_PROX_PENALTY
 
-                if (currLocCap == 1.byte) {
-                    val currIas = currAircraft[IndicatedAirSpeed.mapper]?.iasKt!!
-                    val appEntity = currAircraft[GlideSlopeCaptured.mapper]?.gsApp ?: currAircraft[LocalizerCaptured.mapper]?.locApp ?: currAircraft[VisualCaptured.mapper]?.visApp
-                    val rwyThrPos = appEntity?.get(ApproachInfo.mapper)?.rwyObj?.entity?.get(CustomPosition.mapper)
-                    if (rwyThrPos != null) {
-                        val distNm = pxToNm(calculateDistanceBetweenPoints(currPos.x, currPos.y, rwyThrPos.x, rwyThrPos.y))
-
-                        // Compute max allowed speed for distance from runway
-                        // Max 230 knots @9nm, linear down to 170 knots @3nm
-                        val maxSpd = max(140 + distNm * 10, 170f)
-                        if (distNm < 9.0f && maxSpd < currIas) acReward -= HIGH_APP_SPD_PENALTY
-                    }
-                }
+//                if (currLocCap == 1.byte) {
+//                    val currIas = currAircraft[IndicatedAirSpeed.mapper]?.iasKt!!
+//                    val appEntity = currAircraft[GlideSlopeCaptured.mapper]?.gsApp ?: currAircraft[LocalizerCaptured.mapper]?.locApp ?: currAircraft[VisualCaptured.mapper]?.visApp
+//                    val rwyThrPos = appEntity?.get(ApproachInfo.mapper)?.rwyObj?.entity?.get(CustomPosition.mapper)
+//                    if (rwyThrPos != null) {
+//                        val distNm = pxToNm(calculateDistanceBetweenPoints(currPos.x, currPos.y, rwyThrPos.x, rwyThrPos.y))
+//
+//                        // Compute max allowed speed for distance from runway
+//                        // Max 230 knots @9nm, linear down to 170 knots @3nm
+//                        val maxSpd = max(140 + distNm * 10, 170f)
+//                        if (distNm < 9.0f && maxSpd < currIas) acReward -= HIGH_APP_SPD_PENALTY
+//                    }
+//                }
             }
 
             // Constant per time step penalty

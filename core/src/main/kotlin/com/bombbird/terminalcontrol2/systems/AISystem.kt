@@ -625,9 +625,14 @@ class AISystem: EntitySystem() {
                     }
 
                     if (LOC_CAP_IAS_CHECK) {
-                        // Additional IAS check - max 220 IAS
-                        val spd = get(Speed.mapper)!!
-                        if (spd.speedKts >= 221) {
+                        val rwyPos = locApp[ApproachInfo.mapper]?.rwyObj?.entity?.get(CustomPosition.mapper)!!
+                        val distFromRwyPx = calculateDistanceBetweenPoints(pos.x, pos.y, rwyPos.x, rwyPos.y)
+
+                        // Additional IAS check
+                        // Max spd 251 knots @>=9nm, 181 knots @<=6nm
+                        val maxSpd = MathUtils.clamp(181f + (pxToNm(distFromRwyPx) - 6) * (251 - 181) / 3f, 181f, 251f)
+                        val spd = get(IndicatedAirSpeed.mapper)!!
+                        if (spd.iasKt >= maxSpd) {
                             return@apply
                         }
                     }

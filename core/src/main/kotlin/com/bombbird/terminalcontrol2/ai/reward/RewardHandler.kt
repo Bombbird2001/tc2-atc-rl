@@ -28,6 +28,8 @@ import com.bombbird.terminalcontrol2.global.HIGH_APP_SPD_PENALTY
 import com.bombbird.terminalcontrol2.global.LOC_PROX_PENALTY
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
+import com.bombbird.terminalcontrol2.gymnasium.staterestore.RewardHandlerSnapshotData
+import com.bombbird.terminalcontrol2.gymnasium.staterestore.copyClearanceState
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
 import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
@@ -77,6 +79,28 @@ class RewardHandler(
         mvaConflictCount = 0
         aircraftConflictCount = 0
         wakeConflictCount = 0
+    }
+
+    /** Returns a snapshot of current state for RL state restore (rollback). */
+    fun getStateForSnapshot(): RewardHandlerSnapshotData = RewardHandlerSnapshotData(
+        acPrevLocDistPx = acPrevLocDistPx.copyOf(),
+        acPrevAlt = acPrevAlt.copyOf(),
+        acPrevClearance = Array(acPrevClearance.size) { i -> acPrevClearance[i]?.let { copyClearanceState(it) } },
+        mvaConflictCount = mvaConflictCount,
+        aircraftConflictCount = aircraftConflictCount,
+        wakeConflictCount = wakeConflictCount
+    )
+
+    /** Applies a previously snapshotted state (used after restore). */
+    fun applyState(state: RewardHandlerSnapshotData) {
+        for (i in 0 until minOf(acPrevLocDistPx.size, state.acPrevLocDistPx.size)) {
+            acPrevLocDistPx[i] = state.acPrevLocDistPx[i]
+            acPrevAlt[i] = state.acPrevAlt[i]
+            acPrevClearance[i] = state.acPrevClearance[i]
+        }
+        mvaConflictCount = state.mvaConflictCount
+        aircraftConflictCount = state.aircraftConflictCount
+        wakeConflictCount = state.wakeConflictCount
     }
 
     fun rewardStep(aircraft: Array<Entity?>, aircraftMap: GdxArrayMap<String, Aircraft>, conflicts: GdxArray<Conflict>): Array<Float?> {

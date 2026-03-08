@@ -27,6 +27,8 @@ import com.bombbird.terminalcontrol2.global.SIMPLIFIED_LOC_CAP
 import com.bombbird.terminalcontrol2.global.TRAJECTORY_CHECK_MAX_TIME_S
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPC
 import com.bombbird.terminalcontrol2.gymnasium.ipc.SharedMemoryIPCFactory
+import com.bombbird.terminalcontrol2.gymnasium.staterestore.RLStateRestoreManager
+import com.bombbird.terminalcontrol2.networking.GameServer
 import com.bombbird.terminalcontrol2.systems.TrajectorySystemInterval
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
@@ -84,6 +86,7 @@ class PythonGymnasiumBridge(
     private var landedInCurrentSession = 0
 
     private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
+    private val rlStateRestoreManager = RLStateRestoreManager(5)
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
@@ -96,7 +99,10 @@ class PythonGymnasiumBridge(
         spawnedInCurrentSession++
     }
 
-    override fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {
+    override fun update(
+        aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit,
+        gs: GameServer, resetAircraft: () -> GdxArrayMap<String, Aircraft>
+    ) {
         if (loopExited) return
 
         if (!trainerInitialized) {
@@ -115,10 +121,19 @@ class PythonGymnasiumBridge(
             landedInCurrentSession = 0
 
             assignedCallsigns.clear()
+            rlStateRestoreManager.clearSnapshots()
             resetAircraft()
             spawnedInCurrentSession = aircraft.size
             rewardHandler.rewardReset()
             writeState(aircraft)
+            val baseSnapshot = rlStateRestoreManager.getSnapshot(gs)
+            rlStateRestoreManager.addSnapshot(
+                baseSnapshot.copy(
+                    bridgeSpawnedInSession = spawnedInCurrentSession,
+                    bridgeLandedInSession = landedInCurrentSession,
+                    rewardHandlerState = rewardHandler.getStateForSnapshot()
+                )
+            )
 
             terminating = false
             sharedMemoryIPC.signalActionReady()
@@ -152,6 +167,32 @@ class PythonGymnasiumBridge(
         framesToAction--
         if (framesToAction <= 0 && !resetNeeded) {
             terminating = writeState(aircraft)
+
+            if (rlStateRestoreManager.snapshotCount() == 5) {
+                // TODO Change rollback criteria to conflict detection and perform forced action selection
+                val restoredSnapshot = rlStateRestoreManager.restoreSnapshot(2, gs)
+                restoredSnapshot.bridgeSpawnedInSession?.let { spawnedInCurrentSession = it }
+                restoredSnapshot.bridgeLandedInSession?.let { landedInCurrentSession = it }
+                restoredSnapshot.rewardHandlerState?.let { rewardHandler.applyState(it) }
+
+                // Mappings will be assigned again in writeState
+                assignedCallsigns.clear()
+                for (i in 0 until agentIdToAircraft.size) agentIdToAircraft[i] = null
+
+                rlStateRestoreManager.removeFirstSnapshot()
+                rlStateRestoreManager.removeFirstSnapshot()
+                rlStateRestoreManager.removeFirstSnapshot()
+                terminating = writeState(aircraft)
+            } else {
+                val baseSnapshot = rlStateRestoreManager.getSnapshot(gs)
+                rlStateRestoreManager.addSnapshot(
+                    baseSnapshot.copy(
+                        bridgeSpawnedInSession = spawnedInCurrentSession,
+                        bridgeLandedInSession = landedInCurrentSession,
+                        rewardHandlerState = rewardHandler.getStateForSnapshot()
+                    )
+                )
+            }
 
             // Send action ready event after writing state and action masks to shared memory
             sharedMemoryIPC.signalActionReady()

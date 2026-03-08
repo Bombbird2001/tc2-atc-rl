@@ -47,6 +47,7 @@ import ktx.collections.toGdxArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 class PythonGymnasiumBridge(
@@ -377,7 +378,7 @@ class PythonGymnasiumBridge(
                 4 -> 3000
                 else -> throw IllegalArgumentException("Unexpected alt action $opt")
             }
-            val deltaIas = if (isLocCap && distNm < 8) 0 else when (val opt = bytes[instructionStartOffset + 3].toInt()) {
+            val deltaIas = if (isLocCap && distNm < 9.5f) 0 else when (val opt = bytes[instructionStartOffset + 3].toInt()) {
                 0 -> -30
                 1 -> -10
                 2 -> 0
@@ -412,9 +413,14 @@ class PythonGymnasiumBridge(
 //                else -> throw IllegalArgumentException("Unexpected ias action $opt")
 //            }
 
+            val minSpd = when {
+                distNm < 4 -> max(targetAircraft[AircraftInfo.mapper]?.aircraftPerf?.appSpd!!.toInt(), 150)
+                distNm < 8 -> 150
+                else -> 160
+            }
             val clearedHdg = if (prevHdg == null) prevHdg else modulateHeading(prevHdg + deltaHdg).roundToInt().toShort()
             val clearedAlt = MathUtils.clamp(prevAlt + deltaAlt, 2000, 15000)
-            val clearedIas = MathUtils.clamp(prevIas + deltaIas, 160, 250).toShort()
+            val clearedIas = MathUtils.clamp(prevIas + deltaIas, minSpd, 250).toShort()
             val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas
 
             if (changed) {

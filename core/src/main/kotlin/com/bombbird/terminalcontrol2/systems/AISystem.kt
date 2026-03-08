@@ -276,8 +276,7 @@ class AISystem: EntitySystem() {
             }
         }
 
-        // Update aircraft to slow down to minimum approach speed at less than 6.4nm from runway threshold, except if
-        // aircraft is on circling approach
+        // Enforce approach speed control for TCWS, except if aircraft is on circling approach
         val minApp = minAppSpdFamilyEntities.getEntities()
         for (i in 0 until minApp.size()) {
             minApp[i]?.apply {
@@ -288,12 +287,21 @@ class AISystem: EntitySystem() {
                 val rwyThrPos = appEntity[ApproachInfo.mapper]?.rwyObj?.entity?.get(CustomPosition.mapper) ?: return@apply
                 val minAppSpd = get(AircraftInfo.mapper)?.aircraftPerf?.appSpd ?: return@apply
                 val distNm = pxToNm(calculateDistanceBetweenPoints(pos.x, pos.y, rwyThrPos.x, rwyThrPos.y))
-                if (distNm < 6.4) {
+                if (distNm < 4) {
                     if (cmd.targetIasKt > minAppSpd) {
                         cmd.targetIasKt = minAppSpd
                         clearanceAct.actingClearance.clearanceState.clearedIas = minAppSpd
                     }
                     remove<DecelerateToAppSpd>()
+                    this += LatestClearanceChanged()
+                } else if (distNm < 8) {
+                    val newSpd = max(minAppSpd.toInt(), 150).toShort()
+                    cmd.targetIasKt = newSpd
+                    clearanceAct.actingClearance.clearanceState.clearedIas = newSpd
+                    this += LatestClearanceChanged()
+                } else if (distNm < 9.5f) {
+                    cmd.targetIasKt = 180
+                    clearanceAct.actingClearance.clearanceState.clearedIas = 180
                     this += LatestClearanceChanged()
                 }
             }

@@ -12,6 +12,7 @@ import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.systems.AISystem
 import com.bombbird.terminalcontrol2.systems.FamilyWithListener
+import com.bombbird.terminalcontrol2.systems.TrafficSystemInterval
 import com.bombbird.terminalcontrol2.utilities.calculateMaxAcceleration
 import com.bombbird.terminalcontrol2.utilities.calculateTASFromIAS
 import com.bombbird.terminalcontrol2.utilities.ktToPxps
@@ -39,6 +40,7 @@ object AISystemTest: FunSpec() {
         FamilyWithListener.addAllServerFamilyEntityListeners()
         engine = getEngine(false)
         engine.addSystem(aiSystem)
+        engine.addSystem(TrafficSystemInterval())
         engine.addEntity(entity)
 
         beforeEach {
@@ -169,16 +171,12 @@ object AISystemTest: FunSpec() {
             gs.trafficValue = 12f
             gs.score = 10
             arpt.entity[DepartureInfo.mapper]?.backlog = 5
-            try {
-                runUpdate()
-            } catch (e: MissingEntitySystemException) {
-                // Ignore
-            }
+            runUpdate()
             landingRwy.hasNot(RunwayNextArrival.mapper).shouldBeTrue()
             gs.trafficValue.shouldNotBeNull() shouldBe 12.2f
             gs.score shouldBe 11
             arpt.entity[DepartureInfo.mapper]?.backlog.shouldNotBeNull() shouldBe 6
-            entity.isScheduledForRemoval.shouldBeTrue()
+            engine.entities.contains(entity).shouldBeFalse()
         }
 
         test("Landing acceleration < 35 knots, immobilized") {
@@ -199,7 +197,7 @@ object AISystemTest: FunSpec() {
             gs.trafficValue.shouldNotBeNull() shouldBe 12f
             gs.score shouldBe 10
             arpt.entity[DepartureInfo.mapper]?.backlog.shouldNotBeNull() shouldBe 5
-            entity.isScheduledForRemoval.shouldBeFalse()
+            engine.entities.contains(entity).shouldBeTrue()
         }
 
         test("Above 10000 feet, accelerate to trip IAS above 250 knots") {

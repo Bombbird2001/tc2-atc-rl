@@ -3,6 +3,7 @@ package com.bombbird.terminalcontrol2.gymnasium.staterestore
 import com.badlogic.ashley.core.Entity
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.ArrayMap.Entries
+import com.badlogic.gdx.utils.Queue
 import com.badlogic.gdx.utils.Queue.QueueIterator
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
@@ -105,9 +106,11 @@ private fun buildAircraftSnapshotData(e: Entity): AircraftSnapshotData {
         posCopy to zoneData
     }
     val locApp = e[LocalizerArmed.mapper]?.locApp ?: e[LocalizerCaptured.mapper]?.locApp
-    val gsApp = e[GlideSlopeCaptured.mapper]?.gsApp ?: e[GlideSlopeArmed.mapper]?.gsApp
+    val gsApp = e[GlideSlopeArmed.mapper]?.gsApp ?: e[GlideSlopeCaptured.mapper]?.gsApp
     val visApp = e[VisualCaptured.mapper]?.parentApp
-    val approachInfo = locApp?.get(ApproachInfo.mapper) ?: gsApp?.get(ApproachInfo.mapper) ?: visApp?.get(ApproachInfo.mapper)
+    val stepDownApp = e[StepDownApproach.mapper]?.stepDownApp
+    val circlingApp = e[CirclingApproach.mapper]?.circlingApp
+    val approachInfo = locApp?.get(ApproachInfo.mapper) ?: gsApp?.get(ApproachInfo.mapper) ?: visApp?.get(ApproachInfo.mapper) ?: stepDownApp?.get(ApproachInfo.mapper) ?: circlingApp?.get(ApproachInfo.mapper)
     val arptId = approachInfo?.airportId
     val appName = approachInfo?.approachName
     val rwyId = approachInfo?.rwyId

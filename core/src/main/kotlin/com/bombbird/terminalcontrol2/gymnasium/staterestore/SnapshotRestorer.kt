@@ -10,7 +10,6 @@ import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.components.ApproachChildren
 import com.bombbird.terminalcontrol2.components.RunwayChildren
 import com.bombbird.terminalcontrol2.components.VisualApproach
-import com.bombbird.terminalcontrol2.components.OppositeRunway
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.networking.GameServer
@@ -94,37 +93,28 @@ fun restoreSnapshot(snapshot: Snapshot, gs: GameServer) {
         resolveApproachRefs(ac.entity, data)
     }
 
-    // 6. Restore RunwayOccupied on runways to match snapshot
-    restoreRunwayOccupied(snapshot.runwayOccupied, gs)
-
-    // 7. Restore arrival spawn timers per airport
-    for ((arptId, pair) in snapshot.arrivalSpawnTimers) {
-        val airport = gs.airports.get(arptId) ?: continue
-        val stats = airport.entity[AirportArrivalStats.mapper] ?: continue
-        stats.arrivalSpawnTimer = pair.first
-        stats.previousArrivalSpawnOffsetS = pair.second
-    }
-}
-
-private fun restoreRunwayOccupied(runwayOccupied: Set<Pair<Byte, Byte>>, gs: GameServer) {
+    // 6. Restore RunwayOccupied
     for (arptEntry in Entries(gs.airports)) {
         val arptId = arptEntry.key
-        val airport = arptEntry.value
-        val rwyChildren = airport.entity[RunwayChildren.mapper] ?: continue
+        val rwyChildren = arptEntry.value.entity[RunwayChildren.mapper] ?: continue
         for (rwyEntry in Entries(rwyChildren.rwyMap)) {
             val rwyId = rwyEntry.key
             val rwy = rwyEntry.value
-            val rwyEntity = rwy.entity
-            val key = arptId to rwyId
-            val shouldBeOccupied = key in runwayOccupied
-            val hasOccupied = rwyEntity.has(RunwayOccupied.mapper)
-            if (hasOccupied && !shouldBeOccupied) {
-                rwyEntity.remove<RunwayOccupied>()
-                rwyEntity[OppositeRunway.mapper]?.oppRwy?.remove<RunwayOccupied>()
-            } else if (!hasOccupied && shouldBeOccupied) {
-                rwyEntity.plusAssign(RunwayOccupied())
-                rwyEntity[OppositeRunway.mapper]?.oppRwy?.plusAssign(RunwayOccupied())
+            val e = rwy.entity
+            val occupied = (arptId to rwyId) in snapshot.runwayOccupied
+            if (occupied) e.plusAssign(RunwayOccupied()) else e.remove<RunwayOccupied>()
+            e[OppositeRunway.mapper]?.oppRwy?.let { opp ->
+                if (occupied) opp.plusAssign(RunwayOccupied()) else opp.remove<RunwayOccupied>()
             }
+        }
+    }
+
+    // 7. Restore ArrivalSpawnTimers
+    for ((arptId, timers) in snapshot.arrivalSpawnTimers) {
+        val arpt = gs.airports[arptId]?.entity ?: continue
+        arpt[AirportArrivalStats.mapper]?.let {
+            it.arrivalSpawnTimer = timers.first
+            it.previousArrivalSpawnOffsetS = timers.second
         }
     }
 }
@@ -223,8 +213,8 @@ private fun applyAircraftSnapshotData(e: com.badlogic.ashley.core.Entity, data: 
     } else e.remove<CirclingApproach>()
     if (data.hasStepDownApproach) e.plusAssign(StepDownApproach(com.badlogic.ashley.core.Entity()))
     else e.remove<StepDownApproach>()
-    if (!data.hasGlideSlopeArmed) e.remove<GlideSlopeArmed>()
     if (!data.hasLocalizerArmed) e.remove<LocalizerArmed>()
+    if (!data.hasGlideSlopeArmed) e.remove<GlideSlopeArmed>()
     if (!data.hasLocalizerCaptured) e.remove<LocalizerCaptured>()
     if (!data.hasGlideSlopeCaptured) e.remove<GlideSlopeCaptured>()
     if (!data.hasVisualCaptured) e.remove<VisualCaptured>()
@@ -238,9 +228,11 @@ private fun resolveApproachRefs(e: com.badlogic.ashley.core.Entity, data: Aircra
     val appName = data.approachRefName ?: return
     val arpt = GAME.gameServer?.airports?.get(arptId)?.entity ?: return
     val rwyId = data.approachRefRwyId
-    val appEntity = arpt[ApproachChildren.mapper]?.approachMap?.get(appName)?.entity
-        ?: arpt[RunwayChildren.mapper]?.rwyMap?.get(rwyId)?.entity?.get(VisualApproach.mapper)?.visual
-        ?: return
+    val appEntity = if (data.hasVisualCaptured && rwyId != null) {
+        arpt[RunwayChildren.mapper]?.rwyMap?.get(rwyId)?.entity?.get(VisualApproach.mapper)?.visual
+    } else {
+        arpt[ApproachChildren.mapper]?.approachMap?.get(appName)?.entity
+    } ?: return
     if (data.hasLocalizerCaptured) {
         e.remove<LocalizerCaptured>()
         e.plusAssign(LocalizerCaptured(appEntity))
@@ -253,13 +245,13 @@ private fun resolveApproachRefs(e: com.badlogic.ashley.core.Entity, data: Aircra
         e.remove<VisualCaptured>()
         e.plusAssign(VisualCaptured(appEntity))
     }
-    if (data.hasGlideSlopeArmed) {
-        e.remove<GlideSlopeArmed>()
-        e.plusAssign(GlideSlopeArmed(appEntity))
-    }
     if (data.hasLocalizerArmed) {
         e.remove<LocalizerArmed>()
         e.plusAssign(LocalizerArmed(appEntity))
+    }
+    if (data.hasGlideSlopeArmed) {
+        e.remove<GlideSlopeArmed>()
+        e.plusAssign(GlideSlopeArmed(appEntity))
     }
     if (data.hasStepDownApproach) {
         e.remove<StepDownApproach>()

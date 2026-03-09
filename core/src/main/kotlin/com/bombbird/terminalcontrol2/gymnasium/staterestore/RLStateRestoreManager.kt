@@ -48,7 +48,6 @@ class RLStateRestoreManager(private val maxSnapshots: Int) {
         repeat(stepsAgo - 1) { snapshots.removeLast() }
         val snapshot = snapshots.last
         restoreSnapshot(snapshot, gs)
-        println(snapshotCount())
         return snapshot
     }
 
@@ -59,6 +58,18 @@ class RLStateRestoreManager(private val maxSnapshots: Int) {
     fun removeFirstSnapshot() {
         if (snapshots.isEmpty()) return
         snapshots.removeFirst()
+    }
+
+    /** Updates the actions in the latest snapshot. */
+    fun updateLatestSnapshotActions(actions: Map<String, IntArray>) {
+        if (snapshots.isEmpty()) return
+        val latest = snapshots.removeLast()
+        snapshots.addLast(latest.copy(actions = actions))
+    }
+
+    fun getSnapshotAt(stepsAgo: Int): Snapshot? {
+        if (stepsAgo !in 1..snapshots.size) return null
+        return snapshots.elementAt(snapshots.size - stepsAgo)
     }
 
     /** Returns the number of snapshots currently held. */

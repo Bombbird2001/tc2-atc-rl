@@ -3,6 +3,7 @@ import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.entities.Airport
 import com.bombbird.terminalcontrol2.entities.WakeZone
+import com.bombbird.terminalcontrol2.gymnasium.PythonGymnasiumBridge
 import com.bombbird.terminalcontrol2.gymnasium.staterestore.*
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.GAME_SERVER_THREAD_NAME
@@ -39,6 +40,7 @@ object RLStateRestoreTest : FunSpec() {
         beforeEach {
             Thread.currentThread().name = GAME_SERVER_THREAD_NAME
             GAME.gameServer?.let { gs ->
+                ensureTrafficSystem(gs)
                 clearAllAircraft(gs)
                 clearAllRunwayOccupied(gs)
             }
@@ -283,16 +285,32 @@ object RLStateRestoreTest : FunSpec() {
             val gs = GAME.gameServer.shouldNotBeNull()
             ensureTrafficSystem(gs)
             val manager = RLStateRestoreManager(5)
+            val actions1 = mapOf("MGR02" to intArrayOf(1, 2, 3))
+            val actions2 = mapOf("MGR02" to intArrayOf(4, 5, 6))
+            val actions3 = mapOf("MGR02" to intArrayOf(7, 8, 9))
+            
             addTestAircraft(gs, "MGR02", 1f, 1f, 2000f)
             manager.addSnapshot(manager.getSnapshot(gs))
+            manager.updateLatestSnapshotActions(actions1)
+            
             gs.aircraft.get("MGR02")!!.entity[Position.mapper]!!.x = 2f
             manager.addSnapshot(manager.getSnapshot(gs))
+            manager.updateLatestSnapshotActions(actions2)
+            
             gs.aircraft.get("MGR02")!!.entity[Position.mapper]!!.x = 3f
             manager.addSnapshot(manager.getSnapshot(gs))
+            manager.updateLatestSnapshotActions(actions3)
+            
             manager.snapshotCount() shouldBe 3
-            manager.restoreSnapshot(2, gs)
+            val restoredSnapshot = manager.restoreSnapshot(2, gs)
+            
             manager.snapshotCount() shouldBe 2
             (gs.aircraft.get("MGR02")!!.entity[Position.mapper]!!.x) shouldBe 2f
+            
+            // Verify that the returned snapshot has the correct actions
+            restoredSnapshot.actions["MGR02"]?.get(0) shouldBe 4
+            restoredSnapshot.actions["MGR02"]?.get(1) shouldBe 5
+            restoredSnapshot.actions["MGR02"]?.get(2) shouldBe 6
         }
 
         test("RLStateRestoreManager clearing of later snapshots after restore is correct") {
@@ -301,19 +319,36 @@ object RLStateRestoreTest : FunSpec() {
             val manager = RLStateRestoreManager(5)
             addTestAircraft(gs, "MGR03", 10f, 10f, 1000f)
             manager.addSnapshot(manager.getSnapshot(gs))  // snapshot A: x=10
+            manager.updateLatestSnapshotActions(mapOf("MGR03" to intArrayOf(1, 1, 1)))
+            
             gs.aircraft.get("MGR03")!!.entity[Position.mapper]!!.x = 20f
             manager.addSnapshot(manager.getSnapshot(gs))  // snapshot B: x=20
+            manager.updateLatestSnapshotActions(mapOf("MGR03" to intArrayOf(2, 2, 2)))
+            
             gs.aircraft.get("MGR03")!!.entity[Position.mapper]!!.x = 30f
             manager.addSnapshot(manager.getSnapshot(gs))  // snapshot C: x=30
+            manager.updateLatestSnapshotActions(mapOf("MGR03" to intArrayOf(3, 3, 3)))
+            
             gs.aircraft.get("MGR03")!!.entity[Position.mapper]!!.x = 40f
             manager.addSnapshot(manager.getSnapshot(gs))  // snapshot D: x=40
+            manager.updateLatestSnapshotActions(mapOf("MGR03" to intArrayOf(4, 4, 4)))
+            
             manager.snapshotCount() shouldBe 4
-            manager.restoreSnapshot(3, gs)  // restore to snapshot B (second oldest of 4)
+            
+            // Check getSnapshotAt correctly retrieves snapshot B (index from the end)
+            val bSnap = manager.getSnapshotAt(3)
+            bSnap.shouldNotBeNull()
+            bSnap.actions["MGR03"]?.get(0) shouldBe 2
+            
+            val snapshotB = manager.restoreSnapshot(3, gs)  // restore to snapshot B (second oldest of 4)
             manager.snapshotCount() shouldBe 2  // only A and B remain
             (gs.aircraft.get("MGR03")!!.entity[Position.mapper]!!.x) shouldBe 20f
-            manager.restoreSnapshot(2, gs)  // restore to snapshot A (oldest of remaining 2)
+            snapshotB.actions["MGR03"]?.get(0) shouldBe 2
+            
+            val snapshotA = manager.restoreSnapshot(2, gs)  // restore to snapshot A (oldest of remaining 2)
             manager.snapshotCount() shouldBe 1
             (gs.aircraft.get("MGR03")!!.entity[Position.mapper]!!.x) shouldBe 10f
+            snapshotA.actions["MGR03"]?.get(0) shouldBe 1
         }
 
         test("RLStateRestoreManager restoreSnapshot throws when stepsAgo greater than snapshot count") {
@@ -466,10 +501,15 @@ object RLStateRestoreTest : FunSpec() {
             val fullSnapshot = baseSnapshot.copy(
                 bridgeSpawnedInSession = 5,
                 bridgeLandedInSession = 2,
-                rewardHandlerState = rewardState
+                bridgeAssignedCallsigns = listOf("BR01"),
+                bridgeAgentCallsigns = listOf("BR01", null, null),
+                rewardHandlerState = rewardState,
+                actions = mapOf()
             )
             fullSnapshot.bridgeSpawnedInSession shouldBe 5
             fullSnapshot.bridgeLandedInSession shouldBe 2
+            fullSnapshot.bridgeAssignedCallsigns shouldBe listOf("BR01")
+            fullSnapshot.bridgeAgentCallsigns shouldBe listOf("BR01", null, null)
             val restoredReward = fullSnapshot.rewardHandlerState!!
             restoredReward.mvaConflictCount shouldBe 2
             restoredReward.aircraftConflictCount shouldBe 1
@@ -504,6 +544,18 @@ object RLStateRestoreTest : FunSpec() {
             restored.acPrevClearance[0]!!.clearedAlt shouldBe 7000
             restored.acPrevClearance[0]!!.clearedIas shouldBe 250
         }
+
+        test("PythonGymnasiumBridge option generation correctly orders options by distance from original") {
+            // Heading options should be sorted by absolute distance from original
+            PythonGymnasiumBridge.getHeadingOptions(2).toList() shouldBe listOf(1, 3, 0, 4) // 1 and 3 are dist 1; 0 and 4 are dist 2. Order of ties doesn't strictly matter as long as dist is ascending
+            PythonGymnasiumBridge.getHeadingOptions(0).toList() shouldBe listOf(1, 2, 3, 4)
+            PythonGymnasiumBridge.getHeadingOptions(4).toList() shouldBe listOf(3, 2, 1, 0)
+            
+            // Wake IAS options should only include values < original, sorted descending (closest to original first)
+            PythonGymnasiumBridge.getWakeIasOptions(2).toList() shouldBe listOf(1, 0)
+            PythonGymnasiumBridge.getWakeIasOptions(4).toList() shouldBe listOf(3, 2, 1, 0)
+            PythonGymnasiumBridge.getWakeIasOptions(0).toList() shouldBe emptyList<Int>()
+        }
     }
 
     private fun clearAllAircraft(gs: GameServer) {
@@ -534,11 +586,14 @@ object RLStateRestoreTest : FunSpec() {
     }
 
     private fun ensureAirportWithRunway(gs: GameServer) {
-        if (gs.airports[0.toByte()] != null) return
-        val airport = Airport(0, "TST", "Test", 1, 0, 0f, 0f, 0, "XXXX", false).also {
+        val arpt0 = 0.toByte()
+        val airport = gs.airports[arpt0]
+        if (airport != null && airport.entity[RunwayChildren.mapper]?.rwyMap?.containsKey(arpt0) == true) return
+        
+        val newAirport = Airport(0, "TST", "Test", 1, 0, 0f, 0f, 0, "XXXX", false).also {
             it.addRunway(0, "36", 0f, 0f, 270f, 3500, 0, 0, 0, "", "", RunwayLabel.BEFORE)
         }
-        gs.airports.put(0.toByte(), airport)
+        gs.airports.put(arpt0, newAirport)
     }
 
     /** Ensures airport has an ILS approach with localizer; returns the approach entity for LocalizerArmed. */

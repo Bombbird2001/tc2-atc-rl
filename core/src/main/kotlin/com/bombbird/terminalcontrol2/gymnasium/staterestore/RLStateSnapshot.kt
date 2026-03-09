@@ -17,7 +17,10 @@ data class Snapshot(
     val arrivalSpawnTimers: Map<Byte, Pair<Float, Float>> = emptyMap(),
     val bridgeSpawnedInSession: Int? = null,
     val bridgeLandedInSession: Int? = null,
-    val rewardHandlerState: RewardHandlerSnapshotData? = null
+    val bridgeAssignedCallsigns: List<String>? = null,
+    val bridgeAgentCallsigns: List<String?>? = null,
+    val rewardHandlerState: RewardHandlerSnapshotData? = null,
+    val actions: Map<String, IntArray> = emptyMap()
 ) {
     fun callsigns(): Set<String> = aircraft.keys
 }
@@ -72,7 +75,7 @@ data class AircraftSnapshotData(
     val hasGlideSlopeArmed: Boolean,
     val hasDecelerateTo240kts: Boolean,
     val hasAppDecelerateTo190kts: Boolean,
-    val hasDecelerateToAppSpd: Boolean,
+    val hasDecelerateToAppSpd: Boolean
 )
 
 /** Snapshot of WakeTrail: distNmCounter and list of (position, optional wake zone params). */

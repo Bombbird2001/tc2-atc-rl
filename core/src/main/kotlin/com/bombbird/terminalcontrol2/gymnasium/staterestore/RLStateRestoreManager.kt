@@ -13,6 +13,7 @@ import java.util.ArrayDeque
 class RLStateRestoreManager(private val maxSnapshots: Int) {
 
     private val snapshots = ArrayDeque<Snapshot>(maxSnapshots)
+    private var nextTimestep = 0
 
     /**
      * Creates a snapshot from the current [GameServer] state.
@@ -27,8 +28,8 @@ class RLStateRestoreManager(private val maxSnapshots: Int) {
     fun addSnapshot(snapshot: Snapshot) {
         if (maxSnapshots <= 0) return
         while (snapshots.size >= maxSnapshots) snapshots.removeFirst()
-        snapshots.addLast(snapshot)
-        println(snapshotCount())
+        snapshots.addLast(snapshot.copy(timestep = nextTimestep))
+        nextTimestep++
     }
 
     /**
@@ -48,11 +49,13 @@ class RLStateRestoreManager(private val maxSnapshots: Int) {
         repeat(stepsAgo - 1) { snapshots.removeLast() }
         val snapshot = snapshots.last
         restoreSnapshot(snapshot, gs)
+        nextTimestep = snapshot.timestep + 1
         return snapshot
     }
 
     fun clearSnapshots() {
         snapshots.clear()
+        nextTimestep = 0
     }
 
     fun removeFirstSnapshot() {

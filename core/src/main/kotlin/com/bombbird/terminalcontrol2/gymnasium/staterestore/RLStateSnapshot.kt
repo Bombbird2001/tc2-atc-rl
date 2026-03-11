@@ -11,6 +11,8 @@ import com.bombbird.terminalcontrol2.navigation.Route
  */
 data class Snapshot(
     val aircraft: Map<String, AircraftSnapshotData>,
+    /** Monotonically increasing snapshot timestep within a rollout (managed by RLStateRestoreManager). */
+    val timestep: Int = 0,
     /** Set of (arptId, rwyId) for runways that had RunwayOccupied at snapshot time. */
     val runwayOccupied: Set<Pair<Byte, Byte>> = emptySet(),
     /** Per-airport (arptId) arrival spawn timer and previous offset (arrivalSpawnTimer, previousArrivalSpawnOffsetS). */

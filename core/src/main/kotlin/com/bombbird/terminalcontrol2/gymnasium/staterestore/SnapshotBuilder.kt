@@ -3,7 +3,6 @@ package com.bombbird.terminalcontrol2.gymnasium.staterestore
 import com.badlogic.ashley.core.Entity
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.ArrayMap.Entries
-import com.badlogic.gdx.utils.Queue
 import com.badlogic.gdx.utils.Queue.QueueIterator
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
@@ -26,7 +25,11 @@ fun buildSnapshot(gs: GameServer): Snapshot {
     }
     val runwayOccupied = buildRunwayOccupiedSet(gs)
     val arrivalSpawnTimers = buildArrivalSpawnTimers(gs)
-    return Snapshot(aircraftMap, runwayOccupied, arrivalSpawnTimers)
+    return Snapshot(
+        aircraft = aircraftMap,
+        runwayOccupied = runwayOccupied,
+        arrivalSpawnTimers = arrivalSpawnTimers
+    )
 }
 
 private fun buildArrivalSpawnTimers(gs: GameServer): Map<Byte, Pair<Float, Float>> {

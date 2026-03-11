@@ -66,7 +66,7 @@ class PythonGymnasiumBridge(
         const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
 
         const val FRAMES_PER_ACTION = 10 * 30
-        const val CONFLICT_RESOLUTION_LOOKBACK_STEPS = 5
+        const val CONFLICT_RESOLUTION_LOOKBACK_STEPS = 7
 
 //        const val HDG_ACTION_MULTIPLIER = 5
 //        const val ALT_ACTION_MULTIPLIER = 1000
@@ -103,7 +103,7 @@ class PythonGymnasiumBridge(
     private var landedInCurrentSession = 0
 
     private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
-    private val rlStateRestoreManager = RLStateRestoreManager(5)
+    private val rlStateRestoreManager = RLStateRestoreManager(CONFLICT_RESOLUTION_LOOKBACK_STEPS)
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
@@ -225,7 +225,9 @@ class PythonGymnasiumBridge(
                     // Write the state again to ensure the state is consistent with the snapshot.
                     // Because we restored to T-n (which was captured pre-writeState), this safely calculates 
                     // T-n's rewards and state exactly once without double-counting.
-                    val (isTerminating2, _) = writeState(aircraft)
+                    // Step count modifier is -CONFLICT_RESOLUTION_LOOKBACK_STEPS since we want to "replace" the lookback steps
+                    // and do not include them in the step count
+                    val (isTerminating2, _) = writeState(aircraft, stepCountModifier = (-CONFLICT_RESOLUTION_LOOKBACK_STEPS).byte)
                     terminating = isTerminating2
                 }
                 // If actionOverrides == null, it restored to the backup taken right after the first writeState.
@@ -281,7 +283,7 @@ class PythonGymnasiumBridge(
         }
 
         // Max 5 minutes of waiting before considering as deadlocked
-        if ((System.currentTimeMillis() - lastActionTime) > 5 * 60 * 1000) {
+        if (framesToAction < -5000000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"
@@ -297,7 +299,7 @@ class PythonGymnasiumBridge(
         val backupLanded = landedInCurrentSession
         val backupReward = rewardHandler.getStateForSnapshot()
         val backupCallsigns = assignedCallsigns.toList()
-        val backupAgentCallsigns = Array<String?>(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }
+        val backupAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }
         val backupShm = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
 
         val sortedConflicts = GdxArray<Conflict>().apply { addAll(conflicts) }
@@ -315,12 +317,20 @@ class PythonGymnasiumBridge(
             rank1.compareTo(rank2)
         })
 
+//        FileLog.info(
+//            "$envName PythonGymnasiumBridge",
+//            "CR start: latestSnapshotT=${rlStateRestoreManager.getSnapshotAt(1)?.timestep}, lookbackSteps=$stepsBack, conflictCount=${sortedConflicts.size}"
+//        )
+
         val currentOverrides = mutableMapOf<String, IntArray>()
 
         for (conflict in sortedConflicts) {
             val resolved = resolveSingleConflict(conflict, gs, aircraft, stepsBack, currentOverrides, stopServer)
             if (!resolved) {
-                FileLog.warn("$envName PythonGymnasiumBridge", "Failed to resolve conflict $conflict, aborting resolution")
+//                FileLog.warn("$envName PythonGymnasiumBridge", "Failed to resolve conflict (" +
+//                        "${conflict.entity1[AircraftInfo.mapper]?.icaoCallsign} locCap=${conflict.entity1.has(LocalizerCaptured.mapper)}, " +
+//                        "${conflict.entity2?.get(AircraftInfo.mapper)?.icaoCallsign} locCap=${conflict.entity2?.has(LocalizerCaptured.mapper)}, " +
+//                        "${conflict.reason}), aborting resolution")
                 // Restore backup and return false
                 restoreSnapshot(backupSnapshot, gs)
                 spawnedInCurrentSession = backupSpawned
@@ -334,7 +344,11 @@ class PythonGymnasiumBridge(
                     agentIdToAircraft[i] = if (callsign != null) gs.aircraft.get(callsign)?.entity else null
                 }
                 
-                sharedMemoryIPC.copyByteArray(0, java.nio.ByteBuffer.wrap(backupShm))
+                sharedMemoryIPC.copyByteArray(0, ByteBuffer.wrap(backupShm))
+//                FileLog.info(
+//                    "$envName PythonGymnasiumBridge",
+//                    "CR abort: restored backup state; latestSnapshotT=${rlStateRestoreManager.getSnapshotAt(1)?.timestep}"
+//                )
                 return null
             }
         }
@@ -353,6 +367,13 @@ class PythonGymnasiumBridge(
                 agentIdToAircraft[i] = if (callsign != null) gs.aircraft.get(callsign)?.entity else null
             }
         }
+//        FileLog.info(
+//            "$envName PythonGymnasiumBridge",
+//            "CR success: restored to snapshotT=${snapshotTn.timestep} (nextT=${snapshotTn.timestep + 1}); overrides=${currentOverrides.size}"
+//        )
+//        FileLog.warn("$envName PythonGymnasiumBridge", "Resolved conflict by performing actions:\n${currentOverrides.toList().joinToString {
+//            "${it.first}: ${it.second.joinToString(" ")}"
+//        }}")
 
         return currentOverrides
     }
@@ -366,9 +387,16 @@ class PythonGymnasiumBridge(
         stopServer: () -> Unit
     ): Boolean {
         val snapshotTn = rlStateRestoreManager.getSnapshotAt(stepsBack) ?: return false
+//        val baseTimestep = snapshotTn.timestep
         
         val ac1 = conflict.entity1
-        val callsign1 = ac1[AircraftInfo.mapper]?.icaoCallsign ?: return true
+        val callsign1 = ac1[AircraftInfo.mapper]?.icaoCallsign ?: run {
+//            FileLog.info(
+//                "$envName PythonGymnasiumBridge",
+//                "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (missing callsign1)"
+//            )
+            return true
+        }
         val ac2 = conflict.entity2
         val callsign2 = ac2?.get(AircraftInfo.mapper)?.icaoCallsign
 
@@ -381,6 +409,10 @@ class PythonGymnasiumBridge(
             val succ = testOptions(callsign1, options, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
             if (succ != null) {
                 currentOverrides[callsign1] = succ
+//                FileLog.info(
+//                    "$envName PythonGymnasiumBridge",
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (MVA) ac=$callsign1"
+//                )
                 return true
             }
         } else if (isWake) {
@@ -389,6 +421,10 @@ class PythonGymnasiumBridge(
             val succ1 = testOptions(callsign1, options1, "ias", gs, aircraft, stepsBack, currentOverrides, stopServer)
             if (succ1 != null) {
                 currentOverrides[callsign1] = succ1
+//                FileLog.info(
+//                    "$envName PythonGymnasiumBridge",
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (WAKE) ac=$callsign1"
+//                )
                 return true
             }
             if (callsign2 != null) {
@@ -397,12 +433,22 @@ class PythonGymnasiumBridge(
                 val succ2 = testOptions(callsign2, options2, "ias", gs, aircraft, stepsBack, currentOverrides, stopServer)
                 if (succ2 != null) {
                     currentOverrides[callsign2] = succ2
+//                    FileLog.info(
+//                        "$envName PythonGymnasiumBridge",
+//                        "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (WAKE) ac=$callsign2"
+//                    )
                     return true
                 }
             }
         } else {
             // Aircraft-Aircraft conflict
-            if (callsign2 == null) return false
+            if (callsign2 == null) {
+//                FileLog.info(
+//                    "$envName PythonGymnasiumBridge",
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=false (AC-AC missing callsign2) ac1=$callsign1"
+//                )
+                return false
+            }
             val firstCallsign = if (MathUtils.randomBoolean()) callsign1 else callsign2
             val secondCallsign = if (firstCallsign == callsign1) callsign2 else callsign1
 
@@ -411,6 +457,11 @@ class PythonGymnasiumBridge(
             val succ = testOptions(firstCallsign, options, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
             if (succ != null) {
                 currentOverrides[firstCallsign] = succ
+//                FileLog.info(
+//                    "$envName PythonGymnasiumBridge",
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (AC-AC) " +
+//                            "changed=$firstCallsign locCap=${ac1.has(LocalizerCaptured.mapper)} kept=$secondCallsign locCap=${ac2.has(LocalizerCaptured.mapper)}"
+//                )
                 return true
             }
             val orig2 = currentOverrides[secondCallsign]?.get(0) ?: snapshotTn.actions[secondCallsign]?.get(0) ?: 2
@@ -418,10 +469,19 @@ class PythonGymnasiumBridge(
             val succ2 = testOptions(secondCallsign, options2, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
             if (succ2 != null) {
                 currentOverrides[secondCallsign] = succ2
+//                FileLog.info(
+//                    "$envName PythonGymnasiumBridge",
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (AC-AC) " +
+//                            "changed=$secondCallsign locCap=${ac2.has(LocalizerCaptured.mapper)} kept=$firstCallsign locCap=${ac1.has(LocalizerCaptured.mapper)}"
+//                )
                 return true
             }
         }
 
+//        FileLog.info(
+//            "$envName PythonGymnasiumBridge",
+//            "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=false (reason=${conflict.reason}) ac1=$callsign1 ac2=$callsign2"
+//        )
         return false
     }
 
@@ -453,10 +513,16 @@ class PythonGymnasiumBridge(
                 }
             }
 
+//            FileLog.info(
+//                "$envName PythonGymnasiumBridge",
+//                "CR testOptions: restored snapshotT=${snapshotTn.timestep} testAc=$testAc type=$optionType opt=$opt"
+//            )
+
             var success = true
 
-            for (step in 0 until 5) {
-                val (_, conflicts) = writeState(aircraft)
+            for (step in 0 until CONFLICT_RESOLUTION_LOOKBACK_STEPS) {
+                // Do not count this step since it is just for planning
+                val (_, conflicts) = writeState(aircraft, stepCountModifier = -1)
 
                 if (step > 0) {
                     val involvesTestAc = conflicts.any {
@@ -470,6 +536,11 @@ class PythonGymnasiumBridge(
                 }
 
                 sharedMemoryIPC.signalActionReady()
+
+                if (sharedMemoryIPC.needsResetAfterStep()) {
+                    // TODO Handle reset being received during conflict resolution
+                }
+
                 if (!sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {
                     FileLog.warn("$envName PythonGymnasiumBridge", "Update loop exited during resolution")
                     loopExited = true
@@ -501,7 +572,8 @@ class PythonGymnasiumBridge(
             }
 
             if (success) {
-                val (_, finalConflicts) = writeState(aircraft)
+                // Conflict check for final step - we do not even send this information to the agent so steps are not counted to begin with
+                val (_, finalConflicts) = writeState(aircraft, stepCountModifier = -1)
                 val involvesTestAc = finalConflicts.any {
                     it.entity1[AircraftInfo.mapper]?.icaoCallsign == testAc ||
                     it.entity2?.get(AircraftInfo.mapper)?.icaoCallsign == testAc
@@ -520,8 +592,7 @@ class PythonGymnasiumBridge(
         return null
     }
 
-
-    private fun writeState(aircraft: GdxArrayMap<String, Aircraft>): Pair<Boolean, GdxArray<Conflict>> {
+    private fun writeState(aircraft: GdxArrayMap<String, Aircraft>, stepCountModifier: Byte = 0): Pair<Boolean, GdxArray<Conflict>> {
         if (aircraft.size > MAX_RL_AIRCRAFT) {
             throw IllegalArgumentException("$envName Aircraft must have <= $MAX_RL_AIRCRAFT items, got ${aircraft.size} instead")
         }
@@ -638,6 +709,9 @@ class PythonGymnasiumBridge(
         // Action waiting flag
         sharedMemoryIPC.setByte(0, 1)
 
+        // Step count modifier
+        sharedMemoryIPC.setByte(2, stepCountModifier)
+
         for (agentId in acToRemove) {
             despawnAircraft(agentIdToAircraft[agentId]!!)
             agentIdToAircraft[agentId] = null
@@ -692,7 +766,7 @@ class PythonGymnasiumBridge(
             if (targetAircraft.has(LandingRoll.mapper)) continue
 
             val isLocCap = targetAircraft.has(LocalizerCaptured.mapper)
-            val pos = targetAircraft.get(Position.mapper)!!
+            val pos = targetAircraft[Position.mapper]!!
             val appEntity = targetAircraft[GlideSlopeCaptured.mapper]?.gsApp ?: targetAircraft[LocalizerCaptured.mapper]?.locApp ?: targetAircraft[VisualCaptured.mapper]?.visApp
             val rwyThrPos = appEntity?.get(ApproachInfo.mapper)?.rwyObj?.entity?.get(CustomPosition.mapper)
             val distNm = rwyThrPos?.let {

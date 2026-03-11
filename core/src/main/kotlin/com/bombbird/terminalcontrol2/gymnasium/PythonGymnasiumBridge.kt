@@ -76,6 +76,9 @@ class PythonGymnasiumBridge(
 
         const val LOOP_EXIT_MS = 60000
 
+        val TEST_OPTIONS_RESET_RECEIVED = intArrayOf()
+        val CONFLICT_RESOLUTION_RESET_RECEIVED = mutableMapOf<String, IntArray>()
+
         fun getHeadingOptions(origAction: Int): IntArray {
             val allOptions = intArrayOf(0, 1, 2, 3, 4)
             return allOptions.filter { it != origAction }
@@ -212,6 +215,14 @@ class PythonGymnasiumBridge(
             if (evalMode && conflicts.notEmpty() && rlStateRestoreManager.snapshotCount() >= CONFLICT_RESOLUTION_LOOKBACK_STEPS) {
                 actionOverrides = resolveConflicts(conflicts, gs, aircraft, CONFLICT_RESOLUTION_LOOKBACK_STEPS, stopServer)
 
+                // Reset if needsResetAfterStep received during conflict resolution (due to exceeding step limit)
+                if (actionOverrides == CONFLICT_RESOLUTION_RESET_RECEIVED) {
+                    FileLog.warn("$envName PythonGymnasiumBridge", "Received needsResetAfterStep during conflict resolution - resetting next step")
+                    resetNeeded = true
+                    terminating = false
+                    return
+                }
+
                 // Regardless of whether the conflict resolution is successful, the resolveConflicts function will always
                 // restore the snapshot to the appropriate one
                 // - If unsuccessful, it will restore to the same snapshot as before resolution
@@ -326,6 +337,7 @@ class PythonGymnasiumBridge(
 
         for (conflict in sortedConflicts) {
             val resolved = resolveSingleConflict(conflict, gs, aircraft, stepsBack, currentOverrides, stopServer)
+                ?: return CONFLICT_RESOLUTION_RESET_RECEIVED  // Return special indicator object if we need to reset
             if (!resolved) {
 //                FileLog.warn("$envName PythonGymnasiumBridge", "Failed to resolve conflict (" +
 //                        "${conflict.entity1[AircraftInfo.mapper]?.icaoCallsign} locCap=${conflict.entity1.has(LocalizerCaptured.mapper)}, " +
@@ -385,7 +397,7 @@ class PythonGymnasiumBridge(
         stepsBack: Int,
         currentOverrides: MutableMap<String, IntArray>,
         stopServer: () -> Unit
-    ): Boolean {
+    ): Boolean? {
         val snapshotTn = rlStateRestoreManager.getSnapshotAt(stepsBack) ?: return false
 //        val baseTimestep = snapshotTn.timestep
         
@@ -407,6 +419,7 @@ class PythonGymnasiumBridge(
             val orig = currentOverrides[callsign1]?.get(0) ?: snapshotTn.actions[callsign1]?.get(0) ?: 2
             val options = getHeadingOptions(orig)
             val succ = testOptions(callsign1, options, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
+            if (succ === TEST_OPTIONS_RESET_RECEIVED) return null
             if (succ != null) {
                 currentOverrides[callsign1] = succ
 //                FileLog.info(
@@ -419,6 +432,7 @@ class PythonGymnasiumBridge(
             val orig1 = currentOverrides[callsign1]?.get(2) ?: snapshotTn.actions[callsign1]?.get(2) ?: 2
             val options1 = getWakeIasOptions(orig1)
             val succ1 = testOptions(callsign1, options1, "ias", gs, aircraft, stepsBack, currentOverrides, stopServer)
+            if (succ1 === TEST_OPTIONS_RESET_RECEIVED) return null
             if (succ1 != null) {
                 currentOverrides[callsign1] = succ1
 //                FileLog.info(
@@ -431,6 +445,7 @@ class PythonGymnasiumBridge(
                 val orig2 = currentOverrides[callsign2]?.get(2) ?: snapshotTn.actions[callsign2]?.get(2) ?: 2
                 val options2 = getWakeIasOptions(orig2)
                 val succ2 = testOptions(callsign2, options2, "ias", gs, aircraft, stepsBack, currentOverrides, stopServer)
+                if (succ2 === TEST_OPTIONS_RESET_RECEIVED) return null
                 if (succ2 != null) {
                     currentOverrides[callsign2] = succ2
 //                    FileLog.info(
@@ -455,6 +470,7 @@ class PythonGymnasiumBridge(
             val orig = currentOverrides[firstCallsign]?.get(0) ?: snapshotTn.actions[firstCallsign]?.get(0) ?: 2
             val options = getHeadingOptions(orig)
             val succ = testOptions(firstCallsign, options, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
+            if (succ === TEST_OPTIONS_RESET_RECEIVED) return null
             if (succ != null) {
                 currentOverrides[firstCallsign] = succ
 //                FileLog.info(
@@ -467,6 +483,7 @@ class PythonGymnasiumBridge(
             val orig2 = currentOverrides[secondCallsign]?.get(0) ?: snapshotTn.actions[secondCallsign]?.get(0) ?: 2
             val options2 = getHeadingOptions(orig2)
             val succ2 = testOptions(secondCallsign, options2, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
+            if (succ2 === TEST_OPTIONS_RESET_RECEIVED) return null
             if (succ2 != null) {
                 currentOverrides[secondCallsign] = succ2
 //                FileLog.info(
@@ -537,8 +554,9 @@ class PythonGymnasiumBridge(
 
                 sharedMemoryIPC.signalActionReady()
 
+                // Return a special indicator object if we need to reset
                 if (sharedMemoryIPC.needsResetAfterStep()) {
-                    // TODO Handle reset being received during conflict resolution
+                    return TEST_OPTIONS_RESET_RECEIVED
                 }
 
                 if (!sharedMemoryIPC.waitForActionDone(LOOP_EXIT_MS)) {

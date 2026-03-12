@@ -294,7 +294,7 @@ class PythonGymnasiumBridge(
         }
 
         // Max 5 minutes of waiting before considering as deadlocked
-        if (framesToAction < -5000000) {
+        if ((System.currentTimeMillis() - lastActionTime) > 5 * 60 * 1000) {
             FileLog.warn(
                 "$envName PythonGymnasiumBridge",
                 "Reset deadlock; terminating=$terminating, shouldTerminate=${sharedMemoryIPC.readBytes(1, 1)[0]}"

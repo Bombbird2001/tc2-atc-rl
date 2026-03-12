@@ -14,16 +14,7 @@ import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.VisualCaptured
 import com.bombbird.terminalcontrol2.entities.Aircraft
-import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
-import com.bombbird.terminalcontrol2.global.DIST_SCORE_A
-import com.bombbird.terminalcontrol2.global.DIST_SCORE_B
-import com.bombbird.terminalcontrol2.global.DIST_SCORE_C
-import com.bombbird.terminalcontrol2.global.DIST_SCORE_M
-import com.bombbird.terminalcontrol2.global.DIST_SCORE_N
-import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_PENALTY
-import com.bombbird.terminalcontrol2.global.DIST_SCORE_V2_THRESHOLD_NM
-import com.bombbird.terminalcontrol2.global.ENABLE_PROXIMITY_SCORE
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.HIGH_APP_SPD_PENALTY
 import com.bombbird.terminalcontrol2.global.LOC_PROX_PENALTY
@@ -109,25 +100,6 @@ class RewardHandler(
 
         if (eval) GAME.gameServer?.sendConflicts(conflicts, EMPTY_POTENTIAL_CONFLICTS)
 
-        // Proximity score = (c * e ^ (-a * (dist_nm_between - b))) * max(0, n - m * (altitude_ft_between / 1000)), where a, b, c, m, n are constants
-//        val proximityRewardScores = Array(MAX_RL_AIRCRAFT) { 0f }
-//        if (CHECK_AIRCRAFT_CONFLICT && ENABLE_PROXIMITY_SCORE) {
-//            for (i in 0 until aircraft.size) {
-//                val pos1 = aircraft[i]?.get(Position.mapper) ?: continue
-//                val alt1 = aircraft[i]?.get(Altitude.mapper) ?: continue
-//                for (j in i + 1 until aircraft.size) {
-//                    val pos2 = aircraft[j]?.get(Position.mapper) ?: continue
-//                    val alt2 = aircraft[j]?.get(Altitude.mapper) ?: continue
-//                    val distNm = pxToNm(calculateDistanceBetweenPoints(pos1.x, pos1.y, pos2.x, pos2.y))
-//                    val altFt = abs(alt1.altitudeFt - alt2.altitudeFt)
-//                    val proximityScore = DIST_SCORE_C * exp(DIST_SCORE_A * (distNm - DIST_SCORE_B)) * max(0f, DIST_SCORE_N - DIST_SCORE_M * (altFt / 1000))
-////                val proximityScore = if (distNm >= DIST_SCORE_V2_THRESHOLD_NM || altFt >= 975) 0f else DIST_SCORE_V2_PENALTY
-//                    proximityRewardScores[i] += proximityScore
-//                    proximityRewardScores[j] += proximityScore
-//                }
-//            }
-//        }
-
         val rewards = Array<Float?>(MAX_RL_AIRCRAFT) { null }
 
         for (i in 0 until aircraft.size) {
@@ -176,9 +148,6 @@ class RewardHandler(
 
                 acPrevLocDistPx[i] = newLocDistPx
                 acPrevAlt[i] = currAlt.altitudeFt
-
-                // Subtract sum of proximity score between this and every other aircraft
-//                acReward -= proximityRewardScores[i]
 
                 // Discourage aircraft from loitering too long close to LOC
                 if (currLocCap == 0.byte && newLocDistPx < nmToPx(4) && currAlt.altitudeFt <= 6010) acReward -= LOC_PROX_PENALTY

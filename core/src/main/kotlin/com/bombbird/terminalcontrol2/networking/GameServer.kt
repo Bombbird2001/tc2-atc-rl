@@ -90,7 +90,7 @@ class GameServer private constructor(
          */
         fun newSinglePlayerGameServer(airportToHost: String): GameServer {
             return GameServer(
-                airportToHost, null, false, 1, envId = "0_5dca46", slowMode = true,
+                airportToHost, null, false, 1, envId = "0", slowMode = true,
                 rewardEval = true, goalReward = EVAL_GOAL_REWARD, mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
                 aircraftConflictPenalty = EVAL_AIRCRAFT_CONFLICT_PENALTY, wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY
             )
@@ -978,7 +978,9 @@ class GameServer private constructor(
     fun sendConflicts(conflicts: GdxArray<Conflict>, potentialConflicts: GdxArray<PotentialConflict>) {
         networkServer.sendToAllTCP(
             ConflictData(
-                conflicts.toArray().map { it.getSerialisableObject() }.toTypedArray(),
+                conflicts.toArray().filter {
+                    it.reason != Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN && it.reason != Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN
+                }.map { it.getSerialisableObject() }.toTypedArray(),
                 potentialConflicts.toArray().map { it.getSerialisableObject() }.toTypedArray()
             )
         )

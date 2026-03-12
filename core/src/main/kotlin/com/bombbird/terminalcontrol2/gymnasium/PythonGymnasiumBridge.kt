@@ -60,7 +60,7 @@ class PythonGymnasiumBridge(
 ): GymnasiumBridge {
     companion object {
         const val CONSTANT_SIZE = 20
-        const val SIZE_PER_AIRCRAFT = 56
+        const val SIZE_PER_AIRCRAFT = 60
         const val SIZE_PER_INSTRUCTION = 6
         const val ADDITIONAL_PADDING = (8 - (CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION) % 8) % 8
         const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
@@ -687,6 +687,7 @@ class PythonGymnasiumBridge(
                 stateArray.putInt(currPrevClearance.clearedAlt)
                 stateArray.putInt(currPrevClearance.vectorHdg?.toInt() ?: currHdg.toInt())
                 stateArray.putInt(currPrevClearance.clearedIas.toInt())
+                stateArray.putInt(currAcInfo.aircraftPerf.appSpd.toInt())
                 stateArray.put(currLocCap)
                 stateArray.put(1)  // Aircraft exists
                 stateArray.put(currShouldTerminate)

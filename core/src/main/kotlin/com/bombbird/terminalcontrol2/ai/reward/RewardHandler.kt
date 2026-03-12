@@ -1,6 +1,7 @@
 package com.bombbird.terminalcontrol2.ai.reward
 
 import com.badlogic.ashley.core.Entity
+import com.badlogic.gdx.math.MathUtils
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
@@ -136,6 +137,7 @@ class RewardHandler(
             val currAcInfo = currAircraft[AircraftInfo.mapper]!!
             val currPos = currAircraft[Position.mapper]!!
             val currAlt = currAircraft[Altitude.mapper]!!
+            val currIas = currAircraft[IndicatedAirSpeed.mapper]!!
             val currClearance = getLatestClearanceState(currAircraft)!!
             val currLocCap = if (currAircraft.has(LocalizerCaptured.mapper) || currAircraft.has(LandingRoll.mapper)) 1.byte else 0.byte
 
@@ -197,7 +199,15 @@ class RewardHandler(
             }
 
             // Constant per time step penalty
-            acReward -= PER_STEP_PENALTY
+            // Multiplier for low speeds (increased drag from flaps) or low altitudes (increased drag due to air density)
+            // 1 @>=200 knots, 1.5 @<=150 knots
+            // 1.1 @0 feet, 1@10000 feet, 0.8@>=30000 feet
+            val iasMult = MathUtils.clamp((300 - currIas.iasKt) / 100f, 1f, 1.5f)
+            val altMult = MathUtils.clamp(1 + (10000 - currAlt.altitudeFt) / 10000, 0.8f, 1f)
+            // Constant factor of 1 for time + fuel consumption factor
+            val multiplier = 1 + iasMult * altMult
+            acReward -= PER_STEP_PENALTY * multiplier
+
 
             // Assign negative reward for conflict(s) involving this aircraft
             conflicts.filter { it.entity1 == currAircraft || it.entity2 == currAircraft }.forEach { conflict ->

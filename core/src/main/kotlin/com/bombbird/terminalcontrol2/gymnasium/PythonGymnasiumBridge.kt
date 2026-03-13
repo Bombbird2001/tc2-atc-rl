@@ -47,6 +47,8 @@ import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.GdxSet
+import ktx.collections.getOrPut
+import ktx.collections.set
 import ktx.collections.toGdxArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -105,6 +107,9 @@ class PythonGymnasiumBridge(
     private var spawnedInCurrentSession = 0
     private var landedInCurrentSession = 0
 
+//    private val noLandAircraftTypeCount = GdxArrayMap<String, Int>()
+//    private val noLandRecatCount = GdxArrayMap<Char, Int>()
+
     private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
     private val rlStateRestoreManager = RLStateRestoreManager(CONFLICT_RESOLUTION_LOOKBACK_STEPS)
 
@@ -140,6 +145,14 @@ class PythonGymnasiumBridge(
             for (i in 0 until agentIdToAircraft.size) agentIdToAircraft[i] = null
             landedInCurrentSession = 0
 
+//            for (ac in aircraft) {
+//                val icaoType = ac.value.entity[AircraftInfo.mapper]?.icaoType!!
+//                val recatType = ac.value.entity[AircraftInfo.mapper]?.aircraftPerf?.recat!!
+//                val currCount = noLandAircraftTypeCount.getOrPut(icaoType) { 0 }
+//                val currRecatCount = noLandRecatCount.getOrPut(recatType) { 0 }
+//                noLandAircraftTypeCount[icaoType] = currCount + 1
+//                noLandRecatCount[recatType] = currRecatCount + 1
+//            }
             assignedCallsigns.clear()
             rlStateRestoreManager.clearSnapshots()
             resetAircraft()
@@ -181,6 +194,7 @@ class PythonGymnasiumBridge(
             // Check for exit flag
             if (sharedMemoryIPC.readBytes(1, 1)[0] == 1.byte) {
                 FileLog.warn("$envName PythonGymnasiumBridge", "Training finished, exiting simulator")
+                // FileLog.info("$envName PythonGymnasiumBridge", "$noLandAircraftTypeCount\n$noLandRecatCount")
                 loopExited = true
                 stopServer()
                 return
@@ -280,6 +294,7 @@ class PythonGymnasiumBridge(
             // Check for exit flag
             if (sharedMemoryIPC.readBytes(1, 1)[0] == 1.byte) {
                 FileLog.warn("$envName PythonGymnasiumBridge", "Training finished, exiting simulator")
+                // FileLog.info("$envName PythonGymnasiumBridge", "$noLandAircraftTypeCount\n$noLandRecatCount")
                 loopExited = true
                 stopServer()
                 return

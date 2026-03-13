@@ -50,7 +50,7 @@ import kotlin.math.min
 class GameServer private constructor(
     airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
     testMode: Boolean = false, envId: String = "0", private val isHeadlessTraining: Boolean = false,
-    private val slowMode: Boolean = false, private val rewardEval: Boolean = false, goalReward: Float = 1f,
+    private val slowMode: Boolean = false, val evalMode: Boolean = false, goalReward: Float = 1f,
     mvaConflictPenalty: Float = 0f, aircraftConflictPenalty: Float = 0f, wakeConflictPenalty: Float = 0f,
 ) {
     companion object {
@@ -79,7 +79,7 @@ class GameServer private constructor(
         ): GameServer {
             return GameServer(
                 airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true,
-                slowMode = false, rewardEval = evalMode, goalReward = goalReward, mvaConflictPenalty = mvaConflictPenalty,
+                slowMode = false, evalMode = evalMode, goalReward = goalReward, mvaConflictPenalty = mvaConflictPenalty,
                 aircraftConflictPenalty = aircraftConflictPenalty, wakeConflictPenalty = wakeConflictPenalty
             )
         }
@@ -91,7 +91,7 @@ class GameServer private constructor(
         fun newSinglePlayerGameServer(airportToHost: String): GameServer {
             return GameServer(
                 airportToHost, null, false, 1, envId = "0", slowMode = true,
-                rewardEval = true, goalReward = EVAL_GOAL_REWARD, mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
+                evalMode = true, goalReward = EVAL_GOAL_REWARD, mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
                 aircraftConflictPenalty = EVAL_AIRCRAFT_CONFLICT_PENALTY, wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY
             )
         }
@@ -277,7 +277,7 @@ class GameServer private constructor(
             val tfcSystemInterval = TrafficSystemInterval()
             val trajSystemInterval = TrajectorySystemInterval()
             pythonGymBridge = PythonGymnasiumBridge(
-                envId, tfcSystemInterval.conflictManager, trajSystemInterval, rewardEval,
+                envId, tfcSystemInterval.conflictManager, trajSystemInterval, evalMode,
                 goalReward, mvaConflictPenalty,aircraftConflictPenalty, wakeConflictPenalty
             )
             initiateServer(airportToHost, saveId, tfcSystemInterval, trajSystemInterval)

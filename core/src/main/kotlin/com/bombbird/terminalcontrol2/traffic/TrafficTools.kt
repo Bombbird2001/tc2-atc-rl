@@ -27,6 +27,81 @@ import ktx.math.times
 import kotlin.math.*
 
 val disallowedCallsigns = GdxSet<String>()
+private val rlTrainAcTypeDistribution = CumulativeDistribution<String>().apply {
+    add("A320", 12.824f)
+    add("A359", 11.658f)
+    add("B738", 7.591f)
+    add("B77W", 6.201f)
+    add("A21N", 5.318f)
+    add("B38M", 4.804f)
+    add("A20N", 4.675f)
+    add("B78X", 4.663f)
+    add("B789", 4.217f)
+    add("B788", 2.927f)
+    add("A333", 2.480f)
+    add("A321", 2.016f)
+    add("A388", 8.000f)
+    add("B77L", 1.538f)
+    add("E290", 4.211f)
+    add("B763", 1.091f)
+    add("A332", 1.042f)
+    add("B744", 0.992f)
+    add("A319", 0.729f)
+    add("B733", 1.123f)
+    add("A339", 0.298f)
+    add("B734", 0.842f)
+    add("E295", 0.842f)
+    add("B748", 0.298f)
+    add("A35K", 0.298f)
+    add("B772", 0.248f)
+    add("CL60", 0.281f)
+    add("B752", 8.000f)
+    add("GLF6", 0.281f)
+    add("GLEX", 0.140f)
+    add("FA8X", 0.140f)
+    add("B739", 0.043f)
+    add("GLF4", 0.140f)
+    add("B773", 0.050f)
+    generateNormalized()
+}
+
+private val rlEvalAcTypeDistribution = CumulativeDistribution<String>().apply {
+    add("A320", 17.086f)
+    add("A359", 13.429f)
+    add("B738", 10.114f)
+    add("B77W", 7.143f)
+    add("A21N", 7.086f)
+    add("B38M", 6.400f)
+    add("A20N", 6.229f)
+    add("B78X", 5.371f)
+    add("B789", 4.857f)
+    add("B788", 3.371f)
+    add("A333", 2.857f)
+    add("A321", 2.686f)
+    add("A388", 2.229f)
+    add("B77L", 1.771f)
+    add("E290", 1.714f)
+    add("B763", 1.257f)
+    add("A332", 1.200f)
+    add("B744", 1.143f)
+    add("A319", 0.971f)
+    add("B733", 0.457f)
+    add("A339", 0.343f)
+    add("B734", 0.343f)
+    add("E295", 0.343f)
+    add("B748", 0.343f)
+    add("A35K", 0.343f)
+    add("B772", 0.286f)
+    add("CL60", 0.114f)
+    add("B752", 0.114f)
+    add("GLF6", 0.114f)
+    add("GLEX", 0.057f)
+    add("FA8X", 0.057f)
+    add("B739", 0.057f)
+    add("GLF4", 0.057f)
+    add("B773", 0.057f)
+    generateNormalized()
+}
 
 /**
  * Object for storing traffic modes for the game
@@ -59,17 +134,20 @@ fun createRandomArrival(airports: List<Airport>, gs: GameServer) {
     createRandomArrivalForAirport(arpt, gs)
 }
 
+private fun getRandomAircraftType(isEval: Boolean): String {
+    if (isEval) return rlEvalAcTypeDistribution.value()
+    return rlTrainAcTypeDistribution.value()
+}
+
 /**
  * Creates an arrival to the [airport] with a randomly selected STAR
  */
 fun createRandomArrivalForAirport(airport: Entity, gs: GameServer) {
     val spawnData = generateRandomTrafficForAirport(airport) ?: return
     val callsign = generateRandomCallsign(spawnData.first, spawnData.second, gs) ?: return
-    // Choose random aircraft type from the array of possible aircraft
-    val icaoType = spawnData.third.random() ?: run {
-        FileLog.info("TrafficTools", "No aircraft available for ${spawnData.first} in ${airport[AirportInfo.mapper]?.icaoCode}")
-        "B77W"
-    }
+    // Choose random aircraft type from distribution depending on whether it is eval (use real life distribution)
+    // or train (upsample rare RECAT types e.g. A, C, E)
+    val icaoType = getRandomAircraftType(gs.evalMode)
     createArrival(callsign, icaoType, airport, gs)
 }
 

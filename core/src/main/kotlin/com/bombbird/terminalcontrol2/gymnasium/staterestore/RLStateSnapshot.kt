@@ -33,8 +33,10 @@ data class RewardHandlerSnapshotData(
     val acPrevAlt: Array<Float?>,
     val acPrevClearance: Array<ClearanceState?>,
     val mvaConflictCount: Int,
-    val aircraftConflictCount: Int,
-    val wakeConflictCount: Int
+    val aircraftConflictCountNoLoc: Int,
+    val aircraftConflictCountLoc: Int,
+    val wakeConflictCountNoLoc: Int,
+    val wakeConflictCountLoc: Int
 )
 
 /**

@@ -59,7 +59,7 @@ class PythonGymnasiumBridge(
     goalReward: Float, mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
 ): GymnasiumBridge {
     companion object {
-        const val CONSTANT_SIZE = 20
+        const val CONSTANT_SIZE = 28
         const val SIZE_PER_AIRCRAFT = 60
         const val SIZE_PER_INSTRUCTION = 6
         const val ADDITIONAL_PADDING = (8 - (CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION) % 8) % 8
@@ -86,7 +86,7 @@ class PythonGymnasiumBridge(
                 .toIntArray()
         }
 
-        fun getWakeIasOptions(origAction: Int): IntArray {
+        fun getIasOptions(origAction: Int): IntArray {
             val allOptions = intArrayOf(0, 1, 2, 3, 4)
             return allOptions.filter { it < origAction }
                 .sortedBy { origAction - it }
@@ -412,7 +412,8 @@ class PythonGymnasiumBridge(
         val ac2 = conflict.entity2
         val callsign2 = ac2?.get(AircraftInfo.mapper)?.icaoCallsign
 
-        val isWake = conflict.reason == Conflict.WAKE_INFRINGE
+        val ac1Loc = ac1.has(LocalizerCaptured.mapper)
+        val ac2Loc = ac2?.has(LocalizerCaptured.mapper)
         val isMva = conflict.reason == Conflict.MVA || conflict.reason == Conflict.SID_STAR_MVA || conflict.reason == Conflict.RESTRICTED
 
         if (isMva) {
@@ -428,68 +429,58 @@ class PythonGymnasiumBridge(
 //                )
                 return true
             }
-        } else if (isWake) {
+        } else if (ac1Loc == ac2Loc) {
+            // Either both are on LOC, or both are not on LOC - can only be normal conflict (not wake)
+            // Choose IAS option if both on LOC, or heading option if both not on LOC
+            val optionFunction = if (ac1Loc) PythonGymnasiumBridge::getIasOptions else PythonGymnasiumBridge::getHeadingOptions
+            val optionName = if (ac1Loc) "ias" else "hdg"
+
             val orig1 = currentOverrides[callsign1]?.get(2) ?: snapshotTn.actions[callsign1]?.get(2) ?: 2
-            val options1 = getWakeIasOptions(orig1)
-            val succ1 = testOptions(callsign1, options1, "ias", gs, aircraft, stepsBack, currentOverrides, stopServer)
+            val options1 = optionFunction(orig1)
+            val succ1 = testOptions(callsign1, options1, optionName, gs, aircraft, stepsBack, currentOverrides, stopServer)
             if (succ1 === TEST_OPTIONS_RESET_RECEIVED) return null
             if (succ1 != null) {
                 currentOverrides[callsign1] = succ1
 //                FileLog.info(
 //                    "$envName PythonGymnasiumBridge",
-//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (WAKE) ac=$callsign1"
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true, ac=$callsign1, onLoc=$ac1Loc"
 //                )
                 return true
             }
             if (callsign2 != null) {
                 val orig2 = currentOverrides[callsign2]?.get(2) ?: snapshotTn.actions[callsign2]?.get(2) ?: 2
-                val options2 = getWakeIasOptions(orig2)
-                val succ2 = testOptions(callsign2, options2, "ias", gs, aircraft, stepsBack, currentOverrides, stopServer)
+                val options2 = optionFunction(orig2)
+                val succ2 = testOptions(callsign2, options2, optionName, gs, aircraft, stepsBack, currentOverrides, stopServer)
                 if (succ2 === TEST_OPTIONS_RESET_RECEIVED) return null
                 if (succ2 != null) {
                     currentOverrides[callsign2] = succ2
 //                    FileLog.info(
 //                        "$envName PythonGymnasiumBridge",
-//                        "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (WAKE) ac=$callsign2"
+//                        "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true, ac=$callsign2, onLoc=$ac2Loc"
 //                    )
                     return true
                 }
             }
         } else {
-            // Aircraft-Aircraft conflict
-            if (callsign2 == null) {
-//                FileLog.info(
-//                    "$envName PythonGymnasiumBridge",
-//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=false (AC-AC missing callsign2) ac1=$callsign1"
-//                )
-                return false
-            }
-            val firstCallsign = if (MathUtils.randomBoolean()) callsign1 else callsign2
-            val secondCallsign = if (firstCallsign == callsign1) callsign2 else callsign1
+            // One of aircraft is on LOC, the other is not
+            // Can be aircraft-aircraft conflict, or wake conflict (ac2 will be null if this is the case)
+            val acToResolve = if (ac2 == null) ac1  // Wake conflict, resolve only ac1
+            else if (ac1Loc) ac2 else ac1  // Aircraft-aircraft conflict, resolve aircraft not on LOC
+            val acOnLoc = if (acToResolve == ac1) ac1Loc else ac2Loc!!
+            val callsignToResolve = if (acToResolve == ac1) callsign1 else callsign2!!
+            val optionFunction = if (acOnLoc) PythonGymnasiumBridge::getIasOptions else PythonGymnasiumBridge::getHeadingOptions
+            val optionName = if (acOnLoc) "ias" else "hdg"
 
-            val orig = currentOverrides[firstCallsign]?.get(0) ?: snapshotTn.actions[firstCallsign]?.get(0) ?: 2
-            val options = getHeadingOptions(orig)
-            val succ = testOptions(firstCallsign, options, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
+            val orig = currentOverrides[callsignToResolve]?.get(0) ?: snapshotTn.actions[callsignToResolve]?.get(0) ?: 2
+            val options = optionFunction(orig)
+            val succ = testOptions(callsignToResolve, options, optionName, gs, aircraft, stepsBack, currentOverrides, stopServer)
             if (succ === TEST_OPTIONS_RESET_RECEIVED) return null
             if (succ != null) {
-                currentOverrides[firstCallsign] = succ
+                currentOverrides[callsignToResolve] = succ
 //                FileLog.info(
 //                    "$envName PythonGymnasiumBridge",
-//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (AC-AC) " +
-//                            "changed=$firstCallsign locCap=${ac1.has(LocalizerCaptured.mapper)} kept=$secondCallsign locCap=${ac2.has(LocalizerCaptured.mapper)}"
-//                )
-                return true
-            }
-            val orig2 = currentOverrides[secondCallsign]?.get(0) ?: snapshotTn.actions[secondCallsign]?.get(0) ?: 2
-            val options2 = getHeadingOptions(orig2)
-            val succ2 = testOptions(secondCallsign, options2, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
-            if (succ2 === TEST_OPTIONS_RESET_RECEIVED) return null
-            if (succ2 != null) {
-                currentOverrides[secondCallsign] = succ2
-//                FileLog.info(
-//                    "$envName PythonGymnasiumBridge",
-//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (AC-AC) " +
-//                            "changed=$secondCallsign locCap=${ac2.has(LocalizerCaptured.mapper)} kept=$firstCallsign locCap=${ac1.has(LocalizerCaptured.mapper)}"
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true " +
+//                            "changed=$firstCallsign locCap=$ac1Loc kept=$secondCallsign locCap=$ac2Loc"
 //                )
                 return true
             }
@@ -718,9 +709,11 @@ class PythonGymnasiumBridge(
 
         // Write miscellaneous metrics
         sharedMemoryIPC.setFloat(4, landedInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
-        sharedMemoryIPC.setFloat(8, rewardHandler.aircraftConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(8, rewardHandler.aircraftConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
         sharedMemoryIPC.setFloat(12, rewardHandler.mvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
-        sharedMemoryIPC.setFloat(16, rewardHandler.wakeConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(16, rewardHandler.wakeConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(20, rewardHandler.aircraftConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        sharedMemoryIPC.setFloat(24, rewardHandler.wakeConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
 
         // Copy all aircraft states
         sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)

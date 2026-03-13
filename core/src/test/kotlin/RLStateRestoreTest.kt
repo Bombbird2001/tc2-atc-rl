@@ -495,8 +495,10 @@ object RLStateRestoreTest : FunSpec() {
                 acPrevAlt = Array(MAX_RL_AIRCRAFT) { if (it == 0) 4000f else null },
                 acPrevClearance = Array(MAX_RL_AIRCRAFT) { null },
                 mvaConflictCount = 2,
-                aircraftConflictCount = 1,
-                wakeConflictCount = 3
+                aircraftConflictCountNoLoc = 1,
+                aircraftConflictCountLoc = 2,
+                wakeConflictCountNoLoc = 3,
+                wakeConflictCountLoc = 4,
             )
             val fullSnapshot = baseSnapshot.copy(
                 bridgeSpawnedInSession = 5,
@@ -512,8 +514,10 @@ object RLStateRestoreTest : FunSpec() {
             fullSnapshot.bridgeAgentCallsigns shouldBe listOf("BR01", null, null)
             val restoredReward = fullSnapshot.rewardHandlerState!!
             restoredReward.mvaConflictCount shouldBe 2
-            restoredReward.aircraftConflictCount shouldBe 1
-            restoredReward.wakeConflictCount shouldBe 3
+            restoredReward.aircraftConflictCountNoLoc shouldBe 1
+            restoredReward.aircraftConflictCountLoc shouldBe 2
+            restoredReward.wakeConflictCountNoLoc shouldBe 3
+            restoredReward.wakeConflictCountLoc shouldBe 4
             restoredReward.acPrevLocDistPx[0] shouldBe 100f
             restoredReward.acPrevAlt[0] shouldBe 4000f
         }
@@ -530,15 +534,19 @@ object RLStateRestoreTest : FunSpec() {
                     if (i == 0) ClearanceState().apply { clearedAlt = 7000; clearedIas = 250 } else null
                 },
                 mvaConflictCount = 4,
-                aircraftConflictCount = 5,
-                wakeConflictCount = 6
+                aircraftConflictCountNoLoc = 5,
+                aircraftConflictCountLoc = 3,
+                wakeConflictCountNoLoc = 6,
+                wakeConflictCountLoc = 7,
             )
             handler.rewardReset()
             handler.applyState(state)
             val restored = handler.getStateForSnapshot()
             restored.mvaConflictCount shouldBe 4
-            restored.aircraftConflictCount shouldBe 5
-            restored.wakeConflictCount shouldBe 6
+            restored.aircraftConflictCountNoLoc shouldBe 5
+            restored.aircraftConflictCountLoc shouldBe 3
+            restored.wakeConflictCountNoLoc shouldBe 6
+            restored.wakeConflictCountLoc shouldBe 7
             restored.acPrevLocDistPx[0] shouldBe 200f
             restored.acPrevAlt[0] shouldBe 6000f
             restored.acPrevClearance[0]!!.clearedAlt shouldBe 7000
@@ -552,9 +560,9 @@ object RLStateRestoreTest : FunSpec() {
             PythonGymnasiumBridge.getHeadingOptions(4).toList() shouldBe listOf(3, 2, 1, 0)
             
             // Wake IAS options should only include values < original, sorted descending (closest to original first)
-            PythonGymnasiumBridge.getWakeIasOptions(2).toList() shouldBe listOf(1, 0)
-            PythonGymnasiumBridge.getWakeIasOptions(4).toList() shouldBe listOf(3, 2, 1, 0)
-            PythonGymnasiumBridge.getWakeIasOptions(0).toList() shouldBe emptyList<Int>()
+            PythonGymnasiumBridge.getIasOptions(2).toList() shouldBe listOf(1, 0)
+            PythonGymnasiumBridge.getIasOptions(4).toList() shouldBe listOf(3, 2, 1, 0)
+            PythonGymnasiumBridge.getIasOptions(0).toList() shouldBe emptyList<Int>()
         }
     }
 

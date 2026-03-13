@@ -5,18 +5,13 @@ import com.badlogic.gdx.math.MathUtils
 import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachChildren
-import com.bombbird.terminalcontrol2.components.ApproachInfo
-import com.bombbird.terminalcontrol2.components.CustomPosition
-import com.bombbird.terminalcontrol2.components.GlideSlopeCaptured
 import com.bombbird.terminalcontrol2.components.IndicatedAirSpeed
 import com.bombbird.terminalcontrol2.components.LandingRoll
 import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
-import com.bombbird.terminalcontrol2.components.VisualCaptured
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CLEARANCE_CHANGE_PENALTY
 import com.bombbird.terminalcontrol2.global.GAME
-import com.bombbird.terminalcontrol2.global.HIGH_APP_SPD_PENALTY
 import com.bombbird.terminalcontrol2.global.LOC_PROX_PENALTY
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
 import com.bombbird.terminalcontrol2.global.PER_STEP_PENALTY
@@ -28,17 +23,12 @@ import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.conflict.PotentialConflict
 import com.bombbird.terminalcontrol2.utilities.byte
-import com.bombbird.terminalcontrol2.utilities.calculateDistanceBetweenPoints
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.nmToPx
-import com.bombbird.terminalcontrol2.utilities.pxToNm
 import ktx.ashley.get
 import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.max
 
 class RewardHandler(
     private val conflictManager: ConflictManager, private val eval: Boolean, private val goalReward: Float,
@@ -53,9 +43,13 @@ class RewardHandler(
     private val acPrevClearance: Array<ClearanceState?> = Array(MAX_RL_AIRCRAFT) { null }
     var mvaConflictCount = 0
         private set
-    var aircraftConflictCount = 0
+    var aircraftConflictCountNoLoc = 0
         private set
-    var wakeConflictCount = 0
+    var aircraftConflictCountLoc = 0
+        private set
+    var wakeConflictCountNoLoc = 0
+        private set
+    var wakeConflictCountLoc = 0
         private set
 
     private val targetApproach = lazy {
@@ -69,8 +63,10 @@ class RewardHandler(
             acPrevClearance[i] = null
         }
         mvaConflictCount = 0
-        aircraftConflictCount = 0
-        wakeConflictCount = 0
+        aircraftConflictCountNoLoc = 0
+        aircraftConflictCountLoc = 0
+        wakeConflictCountNoLoc = 0
+        wakeConflictCountLoc = 0
     }
 
     /** Returns a snapshot of current state for RL state restore (rollback). */
@@ -79,8 +75,10 @@ class RewardHandler(
         acPrevAlt = acPrevAlt.copyOf(),
         acPrevClearance = Array(acPrevClearance.size) { i -> acPrevClearance[i]?.let { copyClearanceState(it) } },
         mvaConflictCount = mvaConflictCount,
-        aircraftConflictCount = aircraftConflictCount,
-        wakeConflictCount = wakeConflictCount
+        aircraftConflictCountNoLoc = aircraftConflictCountNoLoc,
+        aircraftConflictCountLoc = aircraftConflictCountLoc,
+        wakeConflictCountNoLoc = wakeConflictCountNoLoc,
+        wakeConflictCountLoc = wakeConflictCountLoc,
     )
 
     /** Applies a previously snapshotted state (used after restore). */
@@ -91,8 +89,10 @@ class RewardHandler(
             acPrevClearance[i] = state.acPrevClearance[i]
         }
         mvaConflictCount = state.mvaConflictCount
-        aircraftConflictCount = state.aircraftConflictCount
-        wakeConflictCount = state.wakeConflictCount
+        aircraftConflictCountNoLoc = state.aircraftConflictCountNoLoc
+        aircraftConflictCountLoc = state.aircraftConflictCountLoc
+        wakeConflictCountNoLoc = state.wakeConflictCountNoLoc
+        wakeConflictCountLoc = state.wakeConflictCountLoc
     }
 
     fun rewardStep(aircraft: Array<Entity?>, aircraftMap: GdxArrayMap<String, Aircraft>, conflicts: GdxArray<Conflict>): Array<Float?> {
@@ -180,17 +180,19 @@ class RewardHandler(
 
             // Assign negative reward for conflict(s) involving this aircraft
             conflicts.filter { it.entity1 == currAircraft || it.entity2 == currAircraft }.forEach { conflict ->
+                val ac1Loc = conflict.entity1.has(LocalizerCaptured.mapper)
+                val ac2Loc = conflict.entity2?.has(LocalizerCaptured.mapper) ?: false
                 if (conflict.entity2 != null) {
                     if (conflict.reason == Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN) {
                         // Use stricter rules for calculating rewards
                         acReward -= aircraftConflictPenalty
                     } else {
                         // But the actual rules when evaluating conflict rate
-                        aircraftConflictCount++
+                        if (ac1Loc && ac2Loc) aircraftConflictCountNoLoc++ else aircraftConflictCountNoLoc++
                     }
                 } else {
                     if (conflict.reason == Conflict.WAKE_INFRINGE) {
-                        wakeConflictCount++
+                        if (ac1Loc) wakeConflictCountLoc++ else wakeConflictCountNoLoc++
                     } else if (conflict.reason == Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN) {
                         acReward -= wakeConflictPenalty
                     } else {

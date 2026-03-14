@@ -212,7 +212,7 @@ const val DISCORD_UPDATE_INTERVAL_S = 10f
 
 /** Training options */
 const val DISABLE_SAVES = true
-const val RANDOM_SPAWN_LOCATION = false
+const val RANDOM_SPAWN_CHANCE = 0.2f
 const val WAIT_BETWEEN_SPAWNS = true
 const val SPAWN_INTERVAL_S = 120f  // Ignored if WAIT_BETWEEN_SPAWNS is false
 const val SIMPLIFIED_LOC_CAP = false

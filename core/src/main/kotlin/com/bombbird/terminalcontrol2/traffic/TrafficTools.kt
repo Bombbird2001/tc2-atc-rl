@@ -168,8 +168,10 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
     val spawnPos: Triple<Float, Float, Float>
 
-    if (RANDOM_SPAWN_LOCATION) {
-        val spawnDir = MathUtils.random(360f)
+    val useRandomSpawn = MathUtils.randomBoolean(RANDOM_SPAWN_CHANCE)
+
+    if (useRandomSpawn) {
+        val spawnDir = MathUtils.random(280f)
 
         val distNm = 39.5f
 
@@ -189,8 +191,9 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
         entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
 //        entity += ArrivalRouteZone().apply { starZone.addAll(getZonesForArrivalRoute(origStarRoute)) }
-        var alt = if (RANDOM_SPAWN_LOCATION) {
-            calculateArrivalSpawnAltitude(entity, airport, Route(), spawnPos.first, spawnPos.second, Route())
+        var alt = if (useRandomSpawn) {
+            MathUtils.random(13000f, 16000f)
+//            calculateArrivalSpawnAltitude(entity, airport, Route(), spawnPos.first, spawnPos.second, Route())
         } else {
             calculateArrivalSpawnAltitude(entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
         }

@@ -52,6 +52,7 @@ class GameServer private constructor(
     testMode: Boolean = false, envId: String = "0", private val isHeadlessTraining: Boolean = false,
     private val slowMode: Boolean = false, val evalMode: Boolean = false, goalReward: Float = 1f,
     mvaConflictPenalty: Float = 0f, aircraftConflictPenalty: Float = 0f, wakeConflictPenalty: Float = 0f,
+    val randomSpawnChance: Float = 0f
 ) {
     companion object {
         const val UPDATE_INTERVAL = 1000.0 / SERVER_UPDATE_RATE
@@ -75,12 +76,14 @@ class GameServer private constructor(
         /** Creates a new single-player mode game server object for ATC-RL headless training */
         fun newRLGameServer(
             airportToHost: String, envId: String, evalMode: Boolean, goalReward: Float,
-            mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float
+            mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
+            randomSpawnChance: Float
         ): GameServer {
             return GameServer(
                 airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true,
                 slowMode = false, evalMode = evalMode, goalReward = goalReward, mvaConflictPenalty = mvaConflictPenalty,
-                aircraftConflictPenalty = aircraftConflictPenalty, wakeConflictPenalty = wakeConflictPenalty
+                aircraftConflictPenalty = aircraftConflictPenalty, wakeConflictPenalty = wakeConflictPenalty,
+                randomSpawnChance = randomSpawnChance
             )
         }
 
@@ -273,6 +276,12 @@ class GameServer private constructor(
     var serverStartedCallback: (() -> Unit)? = null
 
     init {
+        FileLog.info("$envName GameServer",
+            "Initialised with slowMode=$slowMode, evalMode=$evalMode, goalReward=$goalReward," +
+                    " mvaPenalty=$mvaConflictPenalty, aircraftConflictPenalty=$aircraftConflictPenalty," +
+                    " wakePenalty=$wakeConflictPenalty, randomSpawnChance=$randomSpawnChance"
+        )
+
         if (!testMode) {
             val tfcSystemInterval = TrafficSystemInterval()
             val trajSystemInterval = TrajectorySystemInterval()

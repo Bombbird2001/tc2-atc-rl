@@ -168,7 +168,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
     val spawnPos: Triple<Float, Float, Float>
 
-    val useRandomSpawn = MathUtils.randomBoolean(RANDOM_SPAWN_CHANCE)
+    val useRandomSpawn = MathUtils.randomBoolean(gs.randomSpawnChance)
 
     if (useRandomSpawn) {
         val spawnDir = MathUtils.random(280f)

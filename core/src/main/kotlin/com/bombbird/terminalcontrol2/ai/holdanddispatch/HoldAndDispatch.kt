@@ -315,8 +315,13 @@ class HoldAndDispatch(
             var mvaConflicts = 0
             var wakeConflicts = 0
             for (conflict in conflicts) {
-                if (conflict.entity2 != null) {
+                if (conflict.entity2 != null && conflict.reason != Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN) {
                     acConflicts++
+//                    val clearance1 = conflict.entity1[ClearanceAct.mapper]?.actingClearance?.clearanceState!!
+//                    val clearance2 = conflict.entity2[ClearanceAct.mapper]?.actingClearance?.clearanceState!!
+//                    val pos1 = conflict.entity1[Position.mapper]!!
+//                    val pos2 = conflict.entity2[Position.mapper]!!
+//                    println("Conflict detected between\n${conflict.entity1[AircraftInfo.mapper]?.icaoCallsign}@(${pos1.x},${pos1.y},${conflict.entity1[Altitude.mapper]?.altitudeFt}ft), $clearance1 and\n${conflict.entity2[AircraftInfo.mapper]?.icaoCallsign}@(${pos2.x},${pos2.y},${conflict.entity2[Altitude.mapper]?.altitudeFt}ft), $clearance2")
                 } else if (conflict.reason == Conflict.MVA) {
                     mvaConflicts++
                 } else if (conflict.reason == Conflict.WAKE_INFRINGE) {

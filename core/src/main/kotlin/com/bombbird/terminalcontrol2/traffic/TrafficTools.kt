@@ -209,7 +209,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         val dir = (entity[Direction.mapper] ?: Direction()).apply { trackUnitVector.rotateDeg(-spawnPos.third - 180) }
         val aircraftPerf = entity[AircraftInfo.mapper]?.aircraftPerf ?: AircraftTypeData.AircraftPerfData()
 //        val ias = calculateArrivalSpawnIAS(origStarRoute, starRoute, alt, aircraftPerf)
-        val ias: Short = 250
+        val ias: Short = 240
         val tas = calculateTASFromIAS(alt, ias.toFloat())
         val nextWpt = (if (starRoute.size > 0) starRoute[0] else null) as? Route.WaypointLeg
         val nextMinStarAlt = (ceil((getHighestMinAlt(starRoute) ?: Int.MIN_VALUE) / 1000f) * 1000).roundToInt()

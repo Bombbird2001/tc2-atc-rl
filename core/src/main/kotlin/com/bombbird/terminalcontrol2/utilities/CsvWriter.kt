@@ -17,6 +17,7 @@ object CsvWriter {
 
     fun setRunDirectory(runDirectory: String) {
         RUN_DIR = "$runDirectory/"
+        println("Set run directory to $RUN_DIR")
     }
 
     fun writeToAverageHoldingTime(currTime: Float, holdingTime: Float) {

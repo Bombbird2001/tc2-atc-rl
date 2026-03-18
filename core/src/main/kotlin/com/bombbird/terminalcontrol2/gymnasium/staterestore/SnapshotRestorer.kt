@@ -1,5 +1,6 @@
 package com.bombbird.terminalcontrol2.gymnasium.staterestore
 
+import com.badlogic.ashley.core.Entity
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.ArrayMap.Entries
 import com.badlogic.gdx.utils.Queue
@@ -17,7 +18,6 @@ import com.bombbird.terminalcontrol2.systems.TrafficSystemInterval
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import ktx.ashley.get
 import ktx.ashley.getSystem
-import ktx.ashley.has
 import ktx.ashley.plusAssign
 import ktx.ashley.remove
 
@@ -30,7 +30,7 @@ fun restoreSnapshot(snapshot: Snapshot, gs: GameServer) {
     val snapshotCallsigns = snapshot.callsigns()
 
     // 1. Despawn aircraft that are not in the snapshot (spawned after snapshot time)
-    val toDespawn = mutableListOf<com.badlogic.ashley.core.Entity>()
+    val toDespawn = mutableListOf<Entity>()
     for (i in 0 until gs.aircraft.size) {
         val ac = gs.aircraft.getValueAt(i) ?: continue
         val callsign = ac.entity[AircraftInfo.mapper]?.icaoCallsign ?: continue
@@ -119,7 +119,7 @@ fun restoreSnapshot(snapshot: Snapshot, gs: GameServer) {
     }
 }
 
-private fun applyAircraftSnapshotData(e: com.badlogic.ashley.core.Entity, data: AircraftSnapshotData) {
+private fun applyAircraftSnapshotData(e: Entity, data: AircraftSnapshotData) {
     e[Position.mapper]?.apply { x = data.position.x; y = data.position.y }
         ?: e.plusAssign(Position(data.position.x, data.position.y))
     e[Altitude.mapper]?.apply { altitudeFt = data.altitude.altitudeFt }
@@ -209,9 +209,9 @@ private fun applyAircraftSnapshotData(e: com.badlogic.ashley.core.Entity, data: 
         ?: e.remove<EmergencyPending>()
     if (data.circlingApproachPhase != null) {
         e.remove<CirclingApproach>()
-        e.plusAssign(CirclingApproach(com.badlogic.ashley.core.Entity(), 0, data.circlingApproachPhase.toByte()))
+        e.plusAssign(CirclingApproach(Entity(), 0, data.circlingApproachPhase.toByte()))
     } else e.remove<CirclingApproach>()
-    if (data.hasStepDownApproach) e.plusAssign(StepDownApproach(com.badlogic.ashley.core.Entity()))
+    if (data.hasStepDownApproach) e.plusAssign(StepDownApproach(Entity()))
     else e.remove<StepDownApproach>()
     if (!data.hasLocalizerArmed) e.remove<LocalizerArmed>()
     if (!data.hasGlideSlopeArmed) e.remove<GlideSlopeArmed>()
@@ -223,7 +223,7 @@ private fun applyAircraftSnapshotData(e: com.badlogic.ashley.core.Entity, data: 
     if (data.hasDecelerateToAppSpd) e.plusAssign(DecelerateToAppSpd()) else e.remove<DecelerateToAppSpd>()
 }
 
-private fun resolveApproachRefs(e: com.badlogic.ashley.core.Entity, data: AircraftSnapshotData) {
+private fun resolveApproachRefs(e: Entity, data: AircraftSnapshotData) {
     val arptId = data.approachRefArptId ?: return
     val appName = data.approachRefName ?: return
     val arpt = GAME.gameServer?.airports?.get(arptId)?.entity ?: return

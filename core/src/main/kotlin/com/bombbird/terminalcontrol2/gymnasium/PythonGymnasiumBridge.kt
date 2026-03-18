@@ -8,6 +8,7 @@ import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Altitude
 import com.bombbird.terminalcontrol2.components.ApproachInfo
 import com.bombbird.terminalcontrol2.components.CustomPosition
+import com.bombbird.terminalcontrol2.components.ClearanceAct
 import com.bombbird.terminalcontrol2.components.GlideSlopeCaptured
 import com.bombbird.terminalcontrol2.components.GroundTrack
 import com.bombbird.terminalcontrol2.components.IndicatedAirSpeed
@@ -34,6 +35,7 @@ import com.bombbird.terminalcontrol2.systems.TrajectorySystemInterval
 import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
+import com.bombbird.terminalcontrol2.components.FlightType
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.byte
@@ -68,7 +70,7 @@ class PythonGymnasiumBridge(
         const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
 
         const val FRAMES_PER_ACTION = 10 * 30
-        const val CONFLICT_RESOLUTION_LOOKBACK_STEPS = 7
+        const val CONFLICT_RESOLUTION_LOOKBACK_STEPS = 10
 
 //        const val HDG_ACTION_MULTIPLIER = 5
 //        const val ALT_ACTION_MULTIPLIER = 1000
@@ -103,7 +105,7 @@ class PythonGymnasiumBridge(
     private var resetNeeded = false
     private var terminating = false
     private val agentIdToAircraft = Array<Entity?>(MAX_RL_AIRCRAFT) { null }
-    private val assignedCallsigns = GdxSet<String>()
+    private var aircraftAdded = 0
     private var spawnedInCurrentSession = 0
     private var landedInCurrentSession = 0
 
@@ -115,6 +117,63 @@ class PythonGymnasiumBridge(
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
+
+    private fun makeGhostAircraftEntity(callsign: String): Entity {
+        // Create an entity that is safe for writeState serialization, but do NOT add it back into gs.aircraft.
+        val ac = Aircraft(callsign, 0f, 0f, 0f, "B738", FlightType.ARRIVAL, false)
+        if (ac.entity[Position.mapper] == null) ac.entity.add(Position(0f, 0f))
+        if (ac.entity[Altitude.mapper] == null) ac.entity.add(Altitude(0f))
+        if (ac.entity[IndicatedAirSpeed.mapper] == null) ac.entity.add(IndicatedAirSpeed(0f))
+        if (ac.entity[Speed.mapper] == null) ac.entity.add(Speed())
+        if (ac.entity[GroundTrack.mapper] == null) ac.entity.add(GroundTrack())
+        if (ac.entity[ClearanceAct.mapper] == null) ac.entity.add(ClearanceAct())
+        // Ensure track vector is non-zero to avoid NaNs in angle computations
+        ac.entity[GroundTrack.mapper]?.trackVectorPxps?.let { v ->
+            if (v.isZero) v.set(1f, 0f)
+        }
+        // Ensure latest clearance exists and has non-null fields that writeState serializes
+        ac.entity[ClearanceAct.mapper]?.actingClearance?.clearanceState?.apply {
+            vectorHdg = 0
+            clearedAlt = 0
+            clearedIas = 0
+        }
+        return ac.entity
+    }
+
+    private fun restoreAgentIdToAircraftFromCallsigns(callsigns: List<String?>?, gs: GameServer) {
+        for (i in 0 until agentIdToAircraft.size) {
+            val callsign = callsigns?.getOrNull(i)
+            val restored = if (callsign != null) gs.aircraft.get(callsign) else null
+            agentIdToAircraft[i] = when {
+                callsign == null -> null
+                restored != null -> restored.entity
+                else -> makeGhostAircraftEntity(callsign)
+            }
+        }
+    }
+
+    private fun applyBridgeStateFromSnapshot(snapshot: com.bombbird.terminalcontrol2.gymnasium.staterestore.Snapshot, gs: GameServer) {
+        snapshot.bridgeSpawnedInSession?.let { spawnedInCurrentSession = it }
+        snapshot.bridgeLandedInSession?.let { landedInCurrentSession = it }
+        snapshot.rewardHandlerState?.let { rewardHandler.applyState(it) }
+        snapshot.bridgeAddedInSession?.let { aircraftAdded = it }
+        restoreAgentIdToAircraftFromCallsigns(snapshot.bridgeAgentCallsigns, gs)
+    }
+
+    private fun applyBridgeStateFromBackup(
+        spawned: Int,
+        landed: Int,
+        reward: com.bombbird.terminalcontrol2.gymnasium.staterestore.RewardHandlerSnapshotData,
+        added: Int,
+        agentCallsigns: List<String?>,
+        gs: GameServer
+    ) {
+        spawnedInCurrentSession = spawned
+        landedInCurrentSession = landed
+        rewardHandler.applyState(reward)
+        aircraftAdded = added
+        restoreAgentIdToAircraftFromCallsigns(agentCallsigns, gs)
+    }
 
     override fun getEpisodeSpawnCount(): Int {
         return spawnedInCurrentSession
@@ -141,19 +200,28 @@ class PythonGymnasiumBridge(
 //            FileLog.info("$envName PythonGymnasiumBridge", "Resetting state")
             resetNeeded = false
 
+//            if (landedInCurrentSession != AIRCRAFT_TO_SPAWN && landedInCurrentSession > 0) {
+//                FileLog.info("$envName PythonGymnasiumBridge", "$spawnedInCurrentSession spawned in previous episode, of which $aircraftAdded added, $landedInCurrentSession landed, score: ${gs.score}")
+//                for (ac in aircraft) {
+//                    val icaoType = ac.value.entity[AircraftInfo.mapper]?.icaoType!!
+//                    val recatType = ac.value.entity[AircraftInfo.mapper]?.aircraftPerf?.recat!!
+//                    val currCount = noLandAircraftTypeCount.getOrPut(icaoType) { 0 }
+//                    val currRecatCount = noLandRecatCount.getOrPut(recatType) { 0 }
+//                    noLandAircraftTypeCount[icaoType] = currCount + 1
+//                    noLandRecatCount[recatType] = currRecatCount + 1
+//                    FileLog.info("$envName PythonGymnasiumBridge", "${ac.value.entity[AircraftInfo.mapper]?.icaoCallsign!!} did not land!")
+//                }
+//                FileLog.info("$envName PythonGymnasiumBridge", "AC array state: ${agentIdToAircraft.joinToString(" -- ") {
+//                    it?.get(AircraftInfo.mapper)?.icaoCallsign ?: "NA"
+//                }}")
+//            }
+
             // Reset the agent ID to aircraft mapping
             for (i in 0 until agentIdToAircraft.size) agentIdToAircraft[i] = null
             landedInCurrentSession = 0
+            gs.score = 0
 
-//            for (ac in aircraft) {
-//                val icaoType = ac.value.entity[AircraftInfo.mapper]?.icaoType!!
-//                val recatType = ac.value.entity[AircraftInfo.mapper]?.aircraftPerf?.recat!!
-//                val currCount = noLandAircraftTypeCount.getOrPut(icaoType) { 0 }
-//                val currRecatCount = noLandRecatCount.getOrPut(recatType) { 0 }
-//                noLandAircraftTypeCount[icaoType] = currCount + 1
-//                noLandRecatCount[recatType] = currRecatCount + 1
-//            }
-            assignedCallsigns.clear()
+            aircraftAdded = 0
             rlStateRestoreManager.clearSnapshots()
             resetAircraft()
             spawnedInCurrentSession = aircraft.size
@@ -162,7 +230,7 @@ class PythonGymnasiumBridge(
             val baseSnapshot = rlStateRestoreManager.getSnapshot(gs)
             val preWriteSpawned = spawnedInCurrentSession
             val preWriteLanded = landedInCurrentSession
-            val preWriteAssignedCallsigns = assignedCallsigns.toList()
+            val preWriteAdded = aircraftAdded
             val preWriteAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }.toList()
             val preWriteRewardState = rewardHandler.getStateForSnapshot()
 
@@ -172,7 +240,7 @@ class PythonGymnasiumBridge(
                 baseSnapshot.copy(
                     bridgeSpawnedInSession = preWriteSpawned,
                     bridgeLandedInSession = preWriteLanded,
-                    bridgeAssignedCallsigns = preWriteAssignedCallsigns,
+                    bridgeAddedInSession = preWriteAdded,
                     bridgeAgentCallsigns = preWriteAgentCallsigns,
                     rewardHandlerState = preWriteRewardState
                 )
@@ -216,7 +284,7 @@ class PythonGymnasiumBridge(
             val baseSnapshot = rlStateRestoreManager.getSnapshot(gs)
             val preWriteSpawned = spawnedInCurrentSession
             val preWriteLanded = landedInCurrentSession
-            val preWriteAssignedCallsigns = assignedCallsigns.toList()
+            val preWriteAdded = aircraftAdded
             val preWriteAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }.toList()
             val preWriteRewardState = rewardHandler.getStateForSnapshot()
 
@@ -264,7 +332,7 @@ class PythonGymnasiumBridge(
                     baseSnapshot.copy(
                         bridgeSpawnedInSession = preWriteSpawned,
                         bridgeLandedInSession = preWriteLanded,
-                        bridgeAssignedCallsigns = preWriteAssignedCallsigns,
+                        bridgeAddedInSession = preWriteAdded,
                         bridgeAgentCallsigns = preWriteAgentCallsigns,
                         rewardHandlerState = preWriteRewardState
                     )
@@ -324,7 +392,7 @@ class PythonGymnasiumBridge(
         val backupSpawned = spawnedInCurrentSession
         val backupLanded = landedInCurrentSession
         val backupReward = rewardHandler.getStateForSnapshot()
-        val backupCallsigns = assignedCallsigns.toList()
+        val backupAdded = aircraftAdded
         val backupAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }
         val backupShm = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
 
@@ -360,16 +428,14 @@ class PythonGymnasiumBridge(
 //                        "${conflict.reason}), aborting resolution")
                 // Restore backup and return false
                 restoreSnapshot(backupSnapshot, gs)
-                spawnedInCurrentSession = backupSpawned
-                landedInCurrentSession = backupLanded
-                rewardHandler.applyState(backupReward)
-                
-                assignedCallsigns.clear()
-                for (callsign in backupCallsigns) assignedCallsigns.add(callsign)
-                for (i in 0 until agentIdToAircraft.size) {
-                    val callsign = backupAgentCallsigns[i]
-                    agentIdToAircraft[i] = if (callsign != null) gs.aircraft.get(callsign)?.entity else null
-                }
+                applyBridgeStateFromBackup(
+                    spawned = backupSpawned,
+                    landed = backupLanded,
+                    reward = backupReward,
+                    added = backupAdded,
+                    agentCallsigns = backupAgentCallsigns.asList(),
+                    gs = gs
+                )
                 
                 sharedMemoryIPC.copyByteArray(0, ByteBuffer.wrap(backupShm))
 //                FileLog.info(
@@ -382,23 +448,12 @@ class PythonGymnasiumBridge(
 
         // Successfully resolved all conflicts!
         val snapshotTn = rlStateRestoreManager.restoreSnapshot(stepsBack, gs)
-        snapshotTn.bridgeSpawnedInSession?.let { spawnedInCurrentSession = it }
-        snapshotTn.bridgeLandedInSession?.let { landedInCurrentSession = it }
-        snapshotTn.rewardHandlerState?.let { rewardHandler.applyState(it) }
-        
-        assignedCallsigns.clear()
-        snapshotTn.bridgeAssignedCallsigns?.let { for (callsign in it) assignedCallsigns.add(callsign) }
-        snapshotTn.bridgeAgentCallsigns?.let {
-            for (i in 0 until agentIdToAircraft.size) {
-                val callsign = if (i < it.size) it[i] else null
-                agentIdToAircraft[i] = if (callsign != null) gs.aircraft.get(callsign)?.entity else null
-            }
-        }
-//        FileLog.info(
-//            "$envName PythonGymnasiumBridge",
-//            "CR success: restored to snapshotT=${snapshotTn.timestep} (nextT=${snapshotTn.timestep + 1}); overrides=${currentOverrides.size}"
-//        )
-//        FileLog.warn("$envName PythonGymnasiumBridge", "Resolved conflict by performing actions:\n${currentOverrides.toList().joinToString {
+        applyBridgeStateFromSnapshot(snapshotTn, gs)
+        // FileLog.info(
+        //     "$envName PythonGymnasiumBridge",
+        //     "CR success: restored to snapshotT=${snapshotTn.timestep} (nextT=${snapshotTn.timestep + 1}); landed=$landedInCurrentSession overrides=${currentOverrides.size} aircraft=${aircraft.size} agents=${agentIdToAircraft.filterNotNull().size}"
+        // )
+//        FileLog.info("$envName PythonGymnasiumBridge", "Resolved conflict by performing actions:\n${currentOverrides.toList().joinToString {
 //            "${it.first}: ${it.second.joinToString(" ")}"
 //        }}")
 
@@ -522,24 +577,16 @@ class PythonGymnasiumBridge(
         val originalActions = snapshotTn.actions
 
         for (opt in options) {
+            // val prevLanded = landedInCurrentSession
+            // val prevAircraft = aircraft.size
+            // val prevAgent = agentIdToAircraft.filterNotNull().size
             restoreSnapshot(snapshotTn, gs)
-            snapshotTn.bridgeSpawnedInSession?.let { spawnedInCurrentSession = it }
-            snapshotTn.bridgeLandedInSession?.let { landedInCurrentSession = it }
-            snapshotTn.rewardHandlerState?.let { rewardHandler.applyState(it) }
-            
-            assignedCallsigns.clear()
-            snapshotTn.bridgeAssignedCallsigns?.let { for (callsign in it) assignedCallsigns.add(callsign) }
-            snapshotTn.bridgeAgentCallsigns?.let {
-                for (i in 0 until agentIdToAircraft.size) {
-                    val callsign = if (i < it.size) it[i] else null
-                    agentIdToAircraft[i] = if (callsign != null) gs.aircraft.get(callsign)?.entity else null
-                }
-            }
+            applyBridgeStateFromSnapshot(snapshotTn, gs)
 
-//            FileLog.info(
-//                "$envName PythonGymnasiumBridge",
-//                "CR testOptions: restored snapshotT=${snapshotTn.timestep} testAc=$testAc type=$optionType opt=$opt"
-//            )
+            // FileLog.info(
+            //     "$envName PythonGymnasiumBridge",
+            //     "CR testOptions: restored snapshotT=${snapshotTn.timestep} landed=$landedInCurrentSession, previous landed=$prevLanded; aircraft=${aircraft.size}, previous aircraft=$prevAircraft; agents=${agentIdToAircraft.filterNotNull().size}, previous agents=$prevAgent"
+            // )
 
             var success = true
 
@@ -628,12 +675,11 @@ class PythonGymnasiumBridge(
         // Assign agent IDs to newly spawned aircraft, if any
         for (i in 0 until aircraft.size) {
             val ac = aircraft.getValueAt(i).entity
-            val callsign = ac[AircraftInfo.mapper]!!.icaoCallsign
-            if (assignedCallsigns.contains(callsign)) continue
+            if (agentIdToAircraft.contains(ac)) continue
 
-            if (agentIdToAircraft[assignedCallsigns.size] != null) throw IllegalStateException("$envName: Expected agent ${assignedCallsigns.size} to be null before assignment")
-            agentIdToAircraft[assignedCallsigns.size] = ac
-            assignedCallsigns.add(callsign)
+            if (agentIdToAircraft[aircraftAdded] != null) throw IllegalStateException("$envName: Expected agent $aircraftAdded to be null before assignment")
+            agentIdToAircraft[aircraftAdded] = ac
+            aircraftAdded++
         }
 
         val conflicts = if (CHECK_AIRCRAFT_CONFLICT || CHECK_MVA_CONFLICT || CHECK_WAKE_CONFLICT) {

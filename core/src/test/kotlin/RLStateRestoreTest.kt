@@ -503,14 +503,14 @@ object RLStateRestoreTest : FunSpec() {
             val fullSnapshot = baseSnapshot.copy(
                 bridgeSpawnedInSession = 5,
                 bridgeLandedInSession = 2,
-                bridgeAssignedCallsigns = listOf("BR01"),
+                bridgeAddedInSession = 5,
                 bridgeAgentCallsigns = listOf("BR01", null, null),
                 rewardHandlerState = rewardState,
                 actions = mapOf()
             )
             fullSnapshot.bridgeSpawnedInSession shouldBe 5
             fullSnapshot.bridgeLandedInSession shouldBe 2
-            fullSnapshot.bridgeAssignedCallsigns shouldBe listOf("BR01")
+            fullSnapshot.bridgeAddedInSession shouldBe 5
             fullSnapshot.bridgeAgentCallsigns shouldBe listOf("BR01", null, null)
             val restoredReward = fullSnapshot.rewardHandlerState!!
             restoredReward.mvaConflictCount shouldBe 2

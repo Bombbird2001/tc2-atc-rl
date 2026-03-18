@@ -264,9 +264,10 @@ class AISystem: EntitySystem() {
                 val cmd = get(CommandTarget.mapper) ?: return@apply
                 val clearanceAct = get(ClearanceAct.mapper) ?: return@apply
                 if (alt.altitudeFt < 11000 && cmd.targetAltFt <= 10000) {
-                    if (cmd.targetIasKt > 240) {
-                        cmd.targetIasKt = 240
-                        clearanceAct.actingClearance.clearanceState.clearedIas = 240
+                    // 250 knots for baseline for fairness during testing
+                    if (cmd.targetIasKt > 250) {
+                        cmd.targetIasKt = 250
+                        clearanceAct.actingClearance.clearanceState.clearedIas = 250
                     }
                     remove<DecelerateTo240kts>()
                     this += LatestClearanceChanged()
@@ -1199,9 +1200,11 @@ class AISystem: EntitySystem() {
            (get(0) as? Route.WaypointLeg)?.let { prevWpt ->
                 lastWpt = prevWpt
                 entity[LastRestrictions.mapper]?.let { restr ->
-                    prevWpt.maxSpdKt?.let { maxSpd -> restr.maxSpdKt = maxSpd }
-                    prevWpt.minAltFt?.let { minAltFt -> restr.minAltFt = minAltFt }
-                    prevWpt.maxAltFt?.let { maxAltFt -> restr.maxAltFt = maxAltFt }
+                    if (prevWpt.spdRestrActive) prevWpt.maxSpdKt?.let { maxSpd -> restr.maxSpdKt = maxSpd }
+                    if (prevWpt.altRestrActive) {
+                        prevWpt.minAltFt?.let { minAltFt -> restr.minAltFt = minAltFt }
+                        prevWpt.maxAltFt?.let { maxAltFt -> restr.maxAltFt = maxAltFt }
+                    }
                 }
             }
             removeIndex(0)

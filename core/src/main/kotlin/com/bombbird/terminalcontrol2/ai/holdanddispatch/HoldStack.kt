@@ -109,7 +109,7 @@ class HoldStack(
     }
 
     fun getWptLeg(): Route.WaypointLeg {
-        return Route.WaypointLeg(wptId, null, minAlt, 250, legActive = true, altRestrActive = true, spdRestrActive = true)
+        return Route.WaypointLeg(wptId, null, minAlt, 220, legActive = true, altRestrActive = true, spdRestrActive = true)
     }
 
     fun getHoldingCount(): Int {

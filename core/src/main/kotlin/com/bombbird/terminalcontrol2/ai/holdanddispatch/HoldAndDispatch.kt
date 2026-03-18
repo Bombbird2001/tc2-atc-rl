@@ -140,7 +140,7 @@ class HoldAndDispatch(
     }
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit, resetEpisode: () -> Unit) {
-        if (aircraft.isEmpty || episodeStepCounter >= 512) {
+        if (aircraft.isEmpty || episodeStepCounter >= 600) {
             resetEpisode()
             reset()
 
@@ -265,6 +265,9 @@ class HoldAndDispatch(
                 val groundTrack = ac.entity[GroundTrack.mapper]!!.trackVectorPxps
                 val estimatedTravelDistPx = calculateDistanceToPointWithTurn(acPos.x, acPos.y, targetLocPoint.x, targetLocPoint.y, groundTrack, turnRate, groundTrack.len())
                 val lastDispatchedPos = it.entity[Position.mapper]!!
+                // Ensure at least 2nm spacing between this and previously dispatched aircraft before dispatching next
+                if (calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, acPos.x, acPos.y) <= nmToPx(2.5f)) return@let false
+                // Ensure previous dispatched aircraft has already turned towards the LOC before dispatching next
                 if (abs(findDeltaHeading(
                         convertWorldAndRenderDeg(it.entity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
                         getRequiredTrack(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y),

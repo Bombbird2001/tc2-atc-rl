@@ -213,7 +213,7 @@ class Route() {
         /** Debug string representation */
         override fun toString(): String {
             val wptName = getServerOrClientWaypointMap()?.get(wptId)?.entity?.get(WaypointInfo.mapper)?.wptName
-            return "$wptId $wptName ${if (maxAltFt != null) "B$maxAltFt" else ""} ${if (minAltFt != null) "A$minAltFt" else ""} ${if (maxSpdKt != null) "S$maxSpdKt" else ""} ${if (flyOver) "FLYOVER" else ""}"
+            return "$wptId $wptName ${if (maxAltFt != null) "B$maxAltFt" else ""} ${if (minAltFt != null) "A$minAltFt" else ""} ${if (maxSpdKt != null) "S$maxSpdKt" else ""}${if (maxSpdKt != null && !spdRestrActive) "X" else ""} ${if (flyOver) "FLYOVER" else ""}"
         }
     }
 

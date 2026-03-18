@@ -281,6 +281,7 @@ class GameServer private constructor(
     init {
         if (!testMode) {
             val tfcSystemInterval = TrafficSystemInterval()
+            val trajSystemInterval = TrajectorySystemInterval()
             baselineAI = HoldAndDispatch(
                 this, tfcSystemInterval.conflictManager, goalReward,
                 mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
@@ -290,7 +291,7 @@ class GameServer private constructor(
 //                envId, tfcSystemInterval.conflictManager, trajSystemInterval, rewardEval,
 //                goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
 //            )
-            initiateServer(airportToHost, saveId, tfcSystemInterval)
+            initiateServer(airportToHost, saveId, tfcSystemInterval, trajSystemInterval)
         } else {
             baselineAI = StubAgent
 //            pythonGymBridge = StubGymnasiumBridge

@@ -295,8 +295,7 @@ class AISystem: EntitySystem() {
             }
         }
 
-        // Update aircraft to slow down to minimum approach speed at less than 6.4nm from runway threshold, except if
-        // aircraft is on circling approach
+        // Enforce approach speed control for TCWS, except if aircraft is on circling approach
         val minApp = minAppSpdFamilyEntities.getEntities()
         for (i in 0 until minApp.size()) {
             minApp[i]?.apply {
@@ -307,12 +306,21 @@ class AISystem: EntitySystem() {
                 val rwyThrPos = appEntity[ApproachInfo.mapper]?.rwyObj?.entity?.get(CustomPosition.mapper) ?: return@apply
                 val minAppSpd = get(AircraftInfo.mapper)?.aircraftPerf?.appSpd ?: return@apply
                 val distNm = pxToNm(calculateDistanceBetweenPoints(pos.x, pos.y, rwyThrPos.x, rwyThrPos.y))
-                if (distNm < 6.4) {
+                if (distNm < 4) {
                     if (cmd.targetIasKt > minAppSpd) {
                         cmd.targetIasKt = minAppSpd
                         clearanceAct.actingClearance.clearanceState.clearedIas = minAppSpd
                     }
                     remove<DecelerateToAppSpd>()
+                    this += LatestClearanceChanged()
+                } else if (distNm < 8) {
+                    val newSpd = max(minAppSpd.toInt(), 150).toShort()
+                    cmd.targetIasKt = newSpd
+                    clearanceAct.actingClearance.clearanceState.clearedIas = newSpd
+                    this += LatestClearanceChanged()
+                } else if (distNm < 9.5f) {
+                    cmd.targetIasKt = 180
+                    clearanceAct.actingClearance.clearanceState.clearedIas = 180
                     this += LatestClearanceChanged()
                 }
             }
@@ -644,9 +652,14 @@ class AISystem: EntitySystem() {
                     }
 
                     if (LOC_CAP_IAS_CHECK) {
-                        // Additional IAS check - max 220 IAS
-                        val spd = get(Speed.mapper)!!
-                        if (spd.speedKts >= 221) {
+                        val rwyPos = locApp[ApproachInfo.mapper]?.rwyObj?.entity?.get(CustomPosition.mapper)!!
+                        val distFromRwyPx = calculateDistanceBetweenPoints(pos.x, pos.y, rwyPos.x, rwyPos.y)
+
+                        // Additional IAS check
+                        // Max spd 251 knots @>=9nm, 181 knots @<=6nm
+                        val maxSpd = MathUtils.clamp(181f + (pxToNm(distFromRwyPx) - 6) * (251 - 181) / 3f, 181f, 251f)
+                        val spd = get(IndicatedAirSpeed.mapper)!!
+                        if (spd.iasKt >= maxSpd) {
                             return@apply
                         }
                     }

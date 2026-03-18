@@ -178,10 +178,18 @@ class ConflictManager {
 
         // If lateral separation is less than minima, and vertical separation less than minima, conflict exists
         val distPx = calculateDistanceBetweenPoints(pos1.x, pos1.y, pos2.x, pos2.y)
-        if (distPx < nmToPx(conflictMinimaRequired.latMinima) &&
+        if (distPx < nmToPx(conflictMinimaRequired.latMinima * RL_HORIZONTAL_SEP_MINIMA_MULT) &&
             abs(alt1.altitudeFt - alt2.altitudeFt) < conflictMinimaRequired.vertMinima - 25) {
+
+            // Stricter rules for computing rewards
             conflicts.add(Conflict(aircraft1, aircraft2, null, conflictMinimaRequired.latMinima,
-                conflictMinimaRequired.conflictReason))
+                Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN))
+
+            // Actual conflict
+            if (distPx < nmToPx(conflictMinimaRequired.latMinima)) {
+                conflicts.add(Conflict(aircraft1, aircraft2, null, conflictMinimaRequired.latMinima,
+                    conflictMinimaRequired.conflictReason))
+            }
         }
 
         // If no conflict, but separation is less than minima + 2nm, add to potential conflicts

@@ -52,8 +52,9 @@ import kotlin.math.min
 class GameServer private constructor(
     airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
     testMode: Boolean = false, envId: String = "0", private val isHeadlessTraining: Boolean = false,
-    private val slowMode: Boolean = false, private val rewardEval: Boolean = false, goalReward: Float = 1f,
+    private val slowMode: Boolean = false, val evalMode: Boolean = false, goalReward: Float = 1f,
     mvaConflictPenalty: Float = 0f, aircraftConflictPenalty: Float = 0f, wakeConflictPenalty: Float = 0f,
+    val randomSpawnChance: Float = 0f
 ) {
     companion object {
         const val UPDATE_INTERVAL = 1000.0 / SERVER_UPDATE_RATE
@@ -77,12 +78,14 @@ class GameServer private constructor(
         /** Creates a new single-player mode game server object for ATC-RL headless training */
         fun newRLGameServer(
             airportToHost: String, envId: String, evalMode: Boolean, goalReward: Float,
-            mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float
+            mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
+            randomSpawnChance: Float
         ): GameServer {
             return GameServer(
                 airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true,
-                slowMode = false, rewardEval = evalMode, goalReward = goalReward, mvaConflictPenalty = mvaConflictPenalty,
-                aircraftConflictPenalty = aircraftConflictPenalty, wakeConflictPenalty = wakeConflictPenalty
+                slowMode = false, evalMode = evalMode, goalReward = goalReward, mvaConflictPenalty = mvaConflictPenalty,
+                aircraftConflictPenalty = aircraftConflictPenalty, wakeConflictPenalty = wakeConflictPenalty,
+                randomSpawnChance = randomSpawnChance
             )
         }
 
@@ -93,7 +96,7 @@ class GameServer private constructor(
         fun newSinglePlayerGameServer(airportToHost: String): GameServer {
             return GameServer(
                 airportToHost, null, false, 1, envId = "0", slowMode = true,
-                rewardEval = true, goalReward = EVAL_GOAL_REWARD, mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
+                evalMode = true, goalReward = EVAL_GOAL_REWARD, mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
                 aircraftConflictPenalty = EVAL_AIRCRAFT_CONFLICT_PENALTY, wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY
             )
         }
@@ -318,7 +321,10 @@ class GameServer private constructor(
     }
 
     /** Initialises game world where [mainName] is the ICAO code of the main airport */
-    private fun loadGame(mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval) {
+    private fun loadGame(
+        mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval,
+        trajectorySystemInterval: TrajectorySystemInterval
+    ) {
         this.mainName = mainName
         loadAircraftData()
         loadDisallowedCallsigns()
@@ -331,7 +337,6 @@ class GameServer private constructor(
         engine.addSystem(ControlStateSystemInterval())
         engine.addSystem(trafficSystemInterval)
         engine.addSystem(DataSystem())
-        val trajectorySystemInterval = TrajectorySystemInterval()
         engine.addSystem(trajectorySystemInterval)
         engine.addSystem(WeatherSystemInterval())
 
@@ -358,13 +363,16 @@ class GameServer private constructor(
      * @param mainName the name of the main airport in the map
      * @param saveId the ID of the save file to load, or null if nothing to load
      */
-    private fun initiateServer(mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval) {
+    private fun initiateServer(
+        mainName: String, saveId: Int?, trafficSystemInterval: TrafficSystemInterval,
+        trajectorySystemInterval: TrajectorySystemInterval
+    ) {
         GAME.gameServer = this
         thread(name = GAME_SERVER_THREAD_NAME) {
             try {
                 FileLog.info("GameServer", "Starting game server")
                 saveID = saveId
-                loadGame(mainName, saveId, trafficSystemInterval)
+                loadGame(mainName, saveId, trafficSystemInterval, trajectorySystemInterval)
                 val serverStartSuccess = startNetworkingServer()
                 FileLog.info("GameServer", networkServer.getConnectionStatus())
                 if (!serverStartSuccess) {
@@ -997,7 +1005,9 @@ class GameServer private constructor(
     fun sendConflicts(conflicts: GdxArray<Conflict>, potentialConflicts: GdxArray<PotentialConflict>) {
         networkServer.sendToAllTCP(
             ConflictData(
-                conflicts.toArray().map { it.getSerialisableObject() }.toTypedArray(),
+                conflicts.toArray().filter {
+                    it.reason != Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN && it.reason != Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN
+                }.map { it.getSerialisableObject() }.toTypedArray(),
                 potentialConflicts.toArray().map { it.getSerialisableObject() }.toTypedArray()
             )
         )

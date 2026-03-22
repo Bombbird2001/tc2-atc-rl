@@ -153,5 +153,6 @@ private fun buildAircraftSnapshotData(e: Entity): AircraftSnapshotData {
         hasDecelerateTo240kts = e.has(DecelerateTo240kts.mapper),
         hasAppDecelerateTo190kts = e.has(AppDecelerateTo190kts.mapper),
         hasDecelerateToAppSpd = e.has(DecelerateToAppSpd.mapper),
+        spawnGroup = e[SpawnGroup.mapper]!!.spawnGroup
     )
 }

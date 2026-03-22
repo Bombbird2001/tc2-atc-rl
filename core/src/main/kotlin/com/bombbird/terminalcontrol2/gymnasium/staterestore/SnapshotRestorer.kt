@@ -221,6 +221,9 @@ private fun applyAircraftSnapshotData(e: Entity, data: AircraftSnapshotData) {
     if (data.hasDecelerateTo240kts) e.plusAssign(DecelerateTo240kts()) else e.remove<DecelerateTo240kts>()
     if (data.hasAppDecelerateTo190kts) e.plusAssign(AppDecelerateTo190kts()) else e.remove<AppDecelerateTo190kts>()
     if (data.hasDecelerateToAppSpd) e.plusAssign(DecelerateToAppSpd()) else e.remove<DecelerateToAppSpd>()
+    e[SpawnGroup.mapper]?.apply {
+        spawnGroup = data.spawnGroup
+    } ?: e.plusAssign(SpawnGroup(data.spawnGroup))
 }
 
 private fun resolveApproachRefs(e: Entity, data: AircraftSnapshotData) {

@@ -188,7 +188,7 @@ class RewardHandler(
                         acReward -= aircraftConflictPenalty
                     } else {
                         // But the actual rules when evaluating conflict rate
-                        if (ac1Loc && ac2Loc) aircraftConflictCountNoLoc++ else aircraftConflictCountNoLoc++
+                        if (ac1Loc && ac2Loc) aircraftConflictCountLoc++ else aircraftConflictCountNoLoc++
                     }
                 } else {
                     if (conflict.reason == Conflict.WAKE_INFRINGE) {

@@ -79,7 +79,8 @@ data class AircraftSnapshotData(
     val hasGlideSlopeArmed: Boolean,
     val hasDecelerateTo240kts: Boolean,
     val hasAppDecelerateTo190kts: Boolean,
-    val hasDecelerateToAppSpd: Boolean
+    val hasDecelerateToAppSpd: Boolean,
+    val spawnGroup: Byte,
 )
 
 /** Snapshot of WakeTrail: distNmCounter and list of (position, optional wake zone params). */

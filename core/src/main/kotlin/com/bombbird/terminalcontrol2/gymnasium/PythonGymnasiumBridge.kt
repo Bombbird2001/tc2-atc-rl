@@ -36,6 +36,7 @@ import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.components.FlightType
+import com.bombbird.terminalcontrol2.components.SpawnGroup
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.byte
@@ -60,12 +61,6 @@ class PythonGymnasiumBridge(
     goalReward: Float, mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
 ): GymnasiumBridge {
     companion object {
-        const val CONSTANT_SIZE = 28
-        const val SIZE_PER_AIRCRAFT = 60
-        const val SIZE_PER_INSTRUCTION = 6
-        const val ADDITIONAL_PADDING = (8 - (CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION) % 8) % 8
-        const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
-
         const val FRAMES_PER_ACTION = 10 * 30
         const val CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS = 10
         const val CONFLICT_RESOLUTION_LOC_LOOKBACK_STEPS = 40
@@ -106,14 +101,30 @@ class PythonGymnasiumBridge(
     private var aircraftAdded = 0
     private var spawnedInCurrentSession = 0
     private var landedInCurrentSession = 0
+    private var allMvaConflictCount = 0
+    private var allAircraftConflictCountNoLoc = 0
+    private var allAircraftConflictCountLoc = 0
+    private var allWakeConflictCountNoLoc = 0
+    private var allWakeConflictCountLoc = 0
 
 //    private val noLandAircraftTypeCount = GdxArrayMap<String, Int>()
 //    private val noLandRecatCount = GdxArrayMap<Char, Int>()
 
+    private val baseSize = 4
+    private val metricsHandler = MetricsHandler(baseSize)
+    private val metricsPadding = (8 - MAX_RL_AIRCRAFT % 8) % 8
+    private val constantSize = baseSize + metricsHandler.size + metricsPadding
+    private val sizePerAircraft = 60
+    private val sizePerInstruction = 6
+    private val additionalPadding = (8 - (constantSize + MAX_RL_AIRCRAFT * sizePerInstruction) % 8) % 8
+    private val shmFileSize = constantSize + MAX_RL_AIRCRAFT * sizePerInstruction + additionalPadding + MAX_RL_AIRCRAFT * sizePerAircraft
+
     private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
     private val rlStateRestoreManager = RLStateRestoreManager(max(CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS, CONFLICT_RESOLUTION_LOC_LOOKBACK_STEPS))
+    private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, shmFileSize).apply {
+        metricsHandler.init(this)
+    }
 
-    private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
 
     private fun makeGhostAircraftEntity(callsign: String): Entity {
@@ -287,6 +298,21 @@ class PythonGymnasiumBridge(
             val preWriteRewardState = rewardHandler.getStateForSnapshot()
 
             val (isTerminating, conflicts) = writeState(aircraft)
+
+            // writeState removes increased margin conflicts by default
+            for (conflict in conflicts) {
+                val ac1Loc = conflict.entity1.has(LocalizerCaptured.mapper)
+                val ac2Loc = conflict.entity2?.has(LocalizerCaptured.mapper) ?: false
+
+                if (conflict.entity2 != null) {
+                    if (ac1Loc && ac2Loc) allAircraftConflictCountLoc++ else allAircraftConflictCountNoLoc++
+                } else if (conflict.reason == Conflict.WAKE_INFRINGE) {
+                    if (ac1Loc) allWakeConflictCountLoc++ else allWakeConflictCountNoLoc++
+                } else if (conflict.reason in arrayOf(Conflict.MVA, Conflict.SID_STAR_MVA, Conflict.RESTRICTED)) {
+                    allMvaConflictCount++
+                }
+            }
+
             terminating = isTerminating
 
             var actionOverrides: MutableMap<String, IntArray>? = null
@@ -458,7 +484,7 @@ class PythonGymnasiumBridge(
         val backupReward = rewardHandler.getStateForSnapshot()
         val backupAdded = aircraftAdded
         val backupAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }
-        val backupShm = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
+        val backupShm = sharedMemoryIPC.readBytes(0, shmFileSize)
 
 //        FileLog.info(
 //            "$envName PythonGymnasiumBridge",
@@ -684,6 +710,10 @@ class PythonGymnasiumBridge(
 
             if (agentIdToAircraft[aircraftAdded] != null) throw IllegalStateException("$envName: Expected agent $aircraftAdded to be null before assignment")
             agentIdToAircraft[aircraftAdded] = ac
+            metricsHandler.logToSharedMemory(  // Spawn group for each agent
+                MetricsHandler.AIRCRAFT_SPAWN_GROUP, aircraftAdded,
+                ac[SpawnGroup.mapper]?.spawnGroup!!
+            )
             aircraftAdded++
         }
 
@@ -697,13 +727,13 @@ class PythonGymnasiumBridge(
 
         val acRewards = rewardHandler.rewardStep(agentIdToAircraft, aircraft, conflicts)
 
-        val stateArray = ByteBuffer.allocate(MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT).order(ByteOrder.nativeOrder())
+        val stateArray = ByteBuffer.allocate(MAX_RL_AIRCRAFT * sizePerAircraft).order(ByteOrder.nativeOrder())
         val acToRemove = GdxArray<Int>()
         for (currAgentID in 0 until agentIdToAircraft.size) {
             val currAircraft = agentIdToAircraft[currAgentID]
 
             if (currAircraft == null) {
-                stateArray.position(stateArray.position() + SIZE_PER_AIRCRAFT - 7)
+                stateArray.position(stateArray.position() + sizePerAircraft - 7)
                 stateArray.put(0)  // Aircraft does not exist
                 stateArray.put(0)  // Termination flag (NA)
                 stateArray.put(0)  // Action mask (NA)
@@ -774,15 +804,21 @@ class PythonGymnasiumBridge(
         }
 
         // Write miscellaneous metrics
-        sharedMemoryIPC.setFloat(4, landedInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
-        sharedMemoryIPC.setFloat(8, rewardHandler.aircraftConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        sharedMemoryIPC.setFloat(12, rewardHandler.mvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
-        sharedMemoryIPC.setFloat(16, rewardHandler.wakeConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        sharedMemoryIPC.setFloat(20, rewardHandler.aircraftConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        sharedMemoryIPC.setFloat(24, rewardHandler.wakeConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.LANDING_RATE, landedInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_NO_LOC, rewardHandler.aircraftConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.MVA_CONFLICT_RATE, rewardHandler.mvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_NO_LOC, rewardHandler.wakeConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_LOC, rewardHandler.aircraftConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_LOC, rewardHandler.wakeConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        // Conflict rates before resolution
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_NO_LOC_BEFORE_RES, allAircraftConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_LOC_BEFORE_RES, allAircraftConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.MVA_CONFLICT_RATE_BEFORE_RES, allMvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_NO_LOC_BEFORE_RES, allWakeConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_LOC_BEFORE_RES, allWakeConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
 
         // Copy all aircraft states
-        sharedMemoryIPC.copyByteArray(CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING, stateArray)
+        sharedMemoryIPC.copyByteArray(constantSize + MAX_RL_AIRCRAFT * sizePerInstruction + additionalPadding, stateArray)
 
         // Action waiting flag
         sharedMemoryIPC.setByte(0, 1)
@@ -811,7 +847,7 @@ class PythonGymnasiumBridge(
             throw IllegalArgumentException("$envName Aircraft must have <= $MAX_RL_AIRCRAFT items, got ${aircraft.size} instead")
         }
 
-        val bytes = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
+        val bytes = sharedMemoryIPC.readBytes(0, shmFileSize)
         val proceedFlag = bytes[0]
         if (proceedFlag.toInt() != 1) throw IllegalStateException("$envName ProceedFlag must be 1")
         // Reset action waiting flag
@@ -823,7 +859,7 @@ class PythonGymnasiumBridge(
         val actionsRecorded = mutableMapOf<String, IntArray>()
 
         for (currAgentID in 0 until agentIdToAircraft.size) {
-            val instructionStartOffset = CONSTANT_SIZE + currAgentID * SIZE_PER_INSTRUCTION
+            val instructionStartOffset = constantSize + currAgentID * sizePerInstruction
 
             val targetAircraft = agentIdToAircraft[currAgentID] ?: continue
             val callsign = targetAircraft[AircraftInfo.mapper]?.icaoCallsign ?: continue

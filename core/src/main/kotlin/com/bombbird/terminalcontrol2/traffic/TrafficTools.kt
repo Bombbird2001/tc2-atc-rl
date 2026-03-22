@@ -169,6 +169,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val spawnPos: Triple<Float, Float, Float>
 
     val useRandomSpawn = MathUtils.randomBoolean(gs.randomSpawnChance)
+    val spawnGroup: Byte
 
     if (useRandomSpawn) {
         val spawnDir = MathUtils.random(280f)
@@ -184,8 +185,18 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         val offsetX = 0 //-MathUtils.sinDeg(23f) * nmToPx(12.5f)
         val offsetY = 0 //-MathUtils.cosDeg(23f) * nmToPx(12.5f)
         spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
+        spawnGroup = -1
     } else {
         spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
+        // Add spawn group for fairness tracking
+        spawnGroup = when (randomStar!!.name.substring(0, 5)) {
+            "TABUN" -> SpawnGroup.SPAWN_TABUN
+            "SAUNA" -> SpawnGroup.SPAWN_SAUNA
+            "RAKTO", "UGABO" -> SpawnGroup.SPAWN_EAST
+            "GABAL", "ATALO" -> SpawnGroup.SPAWN_NORTH
+            "VEROP" -> SpawnGroup.SPAWN_SOUTH
+            else -> throw IllegalArgumentException("Invalid STAR: ${randomStar.name}")
+        }
     }
 
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
@@ -248,6 +259,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         if (alt > 10000) entity += DecelerateTo240kts()
         entity += ContactFromCentre(MAX_ALT + MathUtils.random(400, 1500))
         initialiseArrivalRequests(entity)
+        entity += SpawnGroup(spawnGroup)
         gs.sendAircraftSpawn(this)
     })
 }

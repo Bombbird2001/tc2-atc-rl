@@ -48,9 +48,6 @@ import ktx.ashley.get
 import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
-import ktx.collections.GdxSet
-import ktx.collections.getOrPut
-import ktx.collections.set
 import ktx.collections.toGdxArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -70,7 +67,8 @@ class PythonGymnasiumBridge(
         const val SHM_FILE_SIZE = CONSTANT_SIZE + MAX_RL_AIRCRAFT * SIZE_PER_INSTRUCTION + ADDITIONAL_PADDING + MAX_RL_AIRCRAFT * SIZE_PER_AIRCRAFT
 
         const val FRAMES_PER_ACTION = 10 * 30
-        const val CONFLICT_RESOLUTION_LOOKBACK_STEPS = 10
+        const val CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS = 10
+        const val CONFLICT_RESOLUTION_LOC_LOOKBACK_STEPS = 40
 
 //        const val HDG_ACTION_MULTIPLIER = 5
 //        const val ALT_ACTION_MULTIPLIER = 1000
@@ -113,7 +111,7 @@ class PythonGymnasiumBridge(
 //    private val noLandRecatCount = GdxArrayMap<Char, Int>()
 
     private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
-    private val rlStateRestoreManager = RLStateRestoreManager(CONFLICT_RESOLUTION_LOOKBACK_STEPS)
+    private val rlStateRestoreManager = RLStateRestoreManager(max(CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS, CONFLICT_RESOLUTION_LOC_LOOKBACK_STEPS))
 
     private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, SHM_FILE_SIZE)
     private val envName = "[env$envId]"
@@ -294,37 +292,35 @@ class PythonGymnasiumBridge(
             var actionOverrides: MutableMap<String, IntArray>? = null
             var shouldAddSnapshot = true
 
-            if (evalMode && conflicts.notEmpty() && rlStateRestoreManager.snapshotCount() >= CONFLICT_RESOLUTION_LOOKBACK_STEPS) {
-                actionOverrides = resolveConflicts(conflicts, gs, aircraft, CONFLICT_RESOLUTION_LOOKBACK_STEPS, stopServer)
+            if (evalMode && conflicts.notEmpty()) {
+                // Only resolve conflicts that require the largest rollback stepsBack (10 = no-LOC, 30 = LOC)
+                val (selectedConflicts, stepsBack) = getConflictsToResolve(conflicts)
+                if (rlStateRestoreManager.snapshotCount() >= stepsBack) {
+                    actionOverrides = resolveConflicts(selectedConflicts, gs, aircraft, stepsBack, stopServer)
 
-                // Reset if needsResetAfterStep received during conflict resolution (due to exceeding step limit)
-                if (actionOverrides == CONFLICT_RESOLUTION_RESET_RECEIVED) {
-                    FileLog.warn("$envName PythonGymnasiumBridge", "Received needsResetAfterStep during conflict resolution - resetting next step")
-                    resetNeeded = true
-                    terminating = false
-                    return
-                }
+                    // Reset if needsResetAfterStep received during conflict resolution (due to exceeding step limit)
+                    if (actionOverrides == CONFLICT_RESOLUTION_RESET_RECEIVED) {
+                        FileLog.warn("$envName PythonGymnasiumBridge", "Received needsResetAfterStep during conflict resolution - resetting next step")
+                        resetNeeded = true
+                        terminating = false
+                        return
+                    }
 
-                // Regardless of whether the conflict resolution is successful, the resolveConflicts function will always
-                // restore the snapshot to the appropriate one
-                // - If unsuccessful, it will restore to the same snapshot as before resolution
-                // - If successful, it will restore to the snapshot CONFLICT_RESOLUTION_LOOKBACK_STEPS steps ago, and
-                // actionOverrides will be populated with the correct action overrides to avoid conflict
-                if (actionOverrides != null) {
-                    // Do not add the snapshot when actionOverrides is not null (successful) - it will
-                    // have restored the appropriate snapshot whose state is already in the restoreManager
-                    shouldAddSnapshot = false
-                    
-                    // Write the state again to ensure the state is consistent with the snapshot.
-                    // Because we restored to T-n (which was captured pre-writeState), this safely calculates 
-                    // T-n's rewards and state exactly once without double-counting.
-                    // Step count modifier is -CONFLICT_RESOLUTION_LOOKBACK_STEPS since we want to "replace" the lookback steps
-                    // and do not include them in the step count
-                    val (isTerminating2, _) = writeState(aircraft, stepCountModifier = (-CONFLICT_RESOLUTION_LOOKBACK_STEPS).byte)
-                    terminating = isTerminating2
+                    // resolveConflicts leaves the game in one of two states:
+                    // - Failure: restored to the pre-resolution backup (state T right after the first writeState above).
+                    // - Success: restoreSnapshot(stepsBack) applied; world is at T-stepsBack with overrides ready for performAction.
+                    if (actionOverrides != null) {
+                        // Success: do not push another snapshot — history already ends at the restored T-stepsBack frame.
+                        shouldAddSnapshot = false
+
+                        // Re-run writeState at T-stepsBack so rewards/metrics match that frame once (no double-count).
+                        // stepCountModifier = -stepsBack offsets the training step counter for the rolled-back frames.
+                        val (isTerminating2, _) = writeState(aircraft, stepCountModifier = (-stepsBack).byte)
+                        terminating = isTerminating2
+                    }
+                    // Failure (actionOverrides == null): backup already restored inside resolveConflicts; skip this writeState
+                    // to avoid applying writeState twice for the same logical time T.
                 }
-                // If actionOverrides == null, it restored to the backup taken right after the first writeState.
-                // We do not call writeState again to avoid double-processing T.
             }
 
             if (shouldAddSnapshot) {
@@ -386,7 +382,75 @@ class PythonGymnasiumBridge(
         }
     }
 
-    private fun resolveConflicts(conflicts: GdxArray<Conflict>, gs: GameServer, aircraft: GdxArrayMap<String, Aircraft>, stepsBack: Int, stopServer: () -> Unit): MutableMap<String, IntArray>? {
+    /** Per-conflict plan: rollback depth and which modality to try (RESOLVE_BOTH = heading first, then IAS). */
+    private data class ConflictMetadata(
+        val conflict: Conflict, val stepsBack: Int, val resolutionAc1: String, val resolutionAc2: String?,
+        val resolutionOption: Int
+    ) {
+        companion object {
+            const val RESOLVE_HDG = 0
+            const val RESOLVE_IAS = 1
+            const val RESOLVE_BOTH = 2
+        }
+    }
+
+    private fun getMetadataForConflict(conflict: Conflict): ConflictMetadata {
+        val ac1 = conflict.entity1
+        val callsign1 = ac1[AircraftInfo.mapper]?.icaoCallsign!!
+        val ac2 = conflict.entity2
+        val callsign2 = ac2?.get(AircraftInfo.mapper)?.icaoCallsign
+
+        val ac1Loc = ac1.has(LocalizerCaptured.mapper)
+        val ac2Loc = ac2?.has(LocalizerCaptured.mapper)
+        val isMva = conflict.reason == Conflict.MVA || conflict.reason == Conflict.SID_STAR_MVA || conflict.reason == Conflict.RESTRICTED
+
+        if (isMva) {
+            return ConflictMetadata(
+                conflict, CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS, callsign1,
+                null, ConflictMetadata.RESOLVE_HDG
+            )
+        } else if (ac1Loc == ac2Loc) {
+            // Either both on LOC, or both are not — aircraft–aircraft only (not wake).
+            // Deeper rollback when both on LOC; try HDG first then IAS if RESOLVE_BOTH.
+            val steps = if (!ac1Loc) CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS else CONFLICT_RESOLUTION_LOC_LOOKBACK_STEPS
+            val resolveOption = if (!ac1Loc) ConflictMetadata.RESOLVE_HDG else ConflictMetadata.RESOLVE_BOTH
+            return ConflictMetadata(
+                conflict, steps, callsign1, callsign2, resolveOption
+            )
+        } else {
+            // One of aircraft is on LOC, the other is not
+            // Can be aircraft-aircraft conflict, or wake conflict (ac2 will be null if this is the case)
+            val acToResolve = if (ac2 == null) ac1  // Wake conflict, resolve only ac1
+            else if (ac1Loc) ac2 else ac1  // Aircraft-aircraft conflict, resolve aircraft not on LOC
+            val acOnLoc = if (acToResolve == ac1) ac1Loc else ac2Loc!!
+            val callsignToResolve = if (acToResolve == ac1) callsign1 else callsign2!!
+            val steps = if (acOnLoc) CONFLICT_RESOLUTION_LOC_LOOKBACK_STEPS else CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS
+            val resolveOption = if (acOnLoc) ConflictMetadata.RESOLVE_BOTH else ConflictMetadata.RESOLVE_HDG
+            return ConflictMetadata(
+                conflict, steps, callsignToResolve, null, resolveOption
+            )
+        }
+    }
+
+    /** Keep only conflicts whose required [ConflictMetadata.stepsBack] equals the maximum among this step's conflicts. */
+    private fun getConflictsToResolve(conflicts: GdxArray<Conflict>): Pair<GdxArray<ConflictMetadata>, Int> {
+        var currMaxSteps = 0
+        val filteredConflicts = GdxArray<ConflictMetadata>(conflicts.size)
+        for (conflict in conflicts) {
+            val metaData = getMetadataForConflict(conflict)
+            if (metaData.stepsBack > currMaxSteps) {
+                filteredConflicts.clear()
+                currMaxSteps = metaData.stepsBack
+            }
+            if (metaData.stepsBack == currMaxSteps) {
+                filteredConflicts.add(metaData)
+            }
+        }
+
+        return Pair(filteredConflicts, currMaxSteps)
+    }
+
+    private fun resolveConflicts(selectedConflicts: GdxArray<ConflictMetadata>, gs: GameServer, aircraft: GdxArrayMap<String, Aircraft>, stepsBack: Int, stopServer: () -> Unit): MutableMap<String, IntArray>? {
         // Save backup of current state T
         val backupSnapshot = rlStateRestoreManager.getSnapshot(gs)
         val backupSpawned = spawnedInCurrentSession
@@ -396,21 +460,6 @@ class PythonGymnasiumBridge(
         val backupAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }
         val backupShm = sharedMemoryIPC.readBytes(0, SHM_FILE_SIZE)
 
-        val sortedConflicts = GdxArray<Conflict>().apply { addAll(conflicts) }
-        sortedConflicts.sort(Comparator { c1, c2 ->
-            val rank1 = when (c1.reason) {
-                Conflict.MVA, Conflict.SID_STAR_MVA, Conflict.RESTRICTED -> 1
-                Conflict.WAKE_INFRINGE -> 2
-                else -> 3
-            }
-            val rank2 = when (c2.reason) {
-                Conflict.MVA, Conflict.SID_STAR_MVA, Conflict.RESTRICTED -> 1
-                Conflict.WAKE_INFRINGE -> 2
-                else -> 3
-            }
-            rank1.compareTo(rank2)
-        })
-
 //        FileLog.info(
 //            "$envName PythonGymnasiumBridge",
 //            "CR start: latestSnapshotT=${rlStateRestoreManager.getSnapshotAt(1)?.timestep}, lookbackSteps=$stepsBack, conflictCount=${sortedConflicts.size}"
@@ -418,7 +467,7 @@ class PythonGymnasiumBridge(
 
         val currentOverrides = mutableMapOf<String, IntArray>()
 
-        for (conflict in sortedConflicts) {
+        for (conflict in selectedConflicts) {
             val resolved = resolveSingleConflict(conflict, gs, aircraft, stepsBack, currentOverrides, stopServer)
                 ?: return CONFLICT_RESOLUTION_RESET_RECEIVED  // Return special indicator object if we need to reset
             if (!resolved) {
@@ -461,7 +510,7 @@ class PythonGymnasiumBridge(
     }
 
     private fun resolveSingleConflict(
-        conflict: Conflict,
+        conflict: ConflictMetadata,
         gs: GameServer,
         aircraft: GdxArrayMap<String, Aircraft>,
         stepsBack: Int,
@@ -470,95 +519,52 @@ class PythonGymnasiumBridge(
     ): Boolean? {
         val snapshotTn = rlStateRestoreManager.getSnapshotAt(stepsBack) ?: return false
 //        val baseTimestep = snapshotTn.timestep
-        
-        val ac1 = conflict.entity1
-        val callsign1 = ac1[AircraftInfo.mapper]?.icaoCallsign ?: run {
-//            FileLog.info(
-//                "$envName PythonGymnasiumBridge",
-//                "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (missing callsign1)"
-//            )
-            return true
+
+        val resolutionOption = conflict.resolutionOption
+        val resolutionSteps = when (resolutionOption) {
+            ConflictMetadata.RESOLVE_HDG -> arrayOf(ConflictMetadata.RESOLVE_HDG)
+            ConflictMetadata.RESOLVE_IAS -> arrayOf(ConflictMetadata.RESOLVE_IAS)
+            ConflictMetadata.RESOLVE_BOTH -> arrayOf(ConflictMetadata.RESOLVE_HDG, ConflictMetadata.RESOLVE_IAS)
+            else -> throw IllegalArgumentException("Unknown resolution option: $resolutionOption")
         }
-        val ac2 = conflict.entity2
-        val callsign2 = ac2?.get(AircraftInfo.mapper)?.icaoCallsign
 
-        val ac1Loc = ac1.has(LocalizerCaptured.mapper)
-        val ac2Loc = ac2?.has(LocalizerCaptured.mapper)
-        val isMva = conflict.reason == Conflict.MVA || conflict.reason == Conflict.SID_STAR_MVA || conflict.reason == Conflict.RESTRICTED
+        for (resolveAc in arrayOf(conflict.resolutionAc1, conflict.resolutionAc2)) {
+            if (resolveAc == null) continue
 
-        if (isMva) {
-            val orig = currentOverrides[callsign1]?.get(0) ?: snapshotTn.actions[callsign1]?.get(0) ?: 2
-            val options = getHeadingOptions(orig)
-            val succ = testOptions(callsign1, options, "hdg", gs, aircraft, stepsBack, currentOverrides, stopServer)
-            if (succ === TEST_OPTIONS_RESET_RECEIVED) return null
-            if (succ != null) {
-                currentOverrides[callsign1] = succ
+            for (optionType in resolutionSteps) {
+                val defaultClearance = when (optionType) {
+                    ConflictMetadata.RESOLVE_HDG -> 2
+                    ConflictMetadata.RESOLVE_IAS -> 2
+                    else -> throw IllegalArgumentException("Unknown individual resolution option $optionType")
+                }
+                val actionIndex = when (optionType) {
+                    ConflictMetadata.RESOLVE_HDG -> 0
+                    ConflictMetadata.RESOLVE_IAS -> 2
+                    else -> throw IllegalArgumentException("Unknown individual resolution option $optionType")
+                }
+                val origClearance = currentOverrides[resolveAc]?.get(actionIndex) ?: snapshotTn.actions[resolveAc]?.get(actionIndex) ?: defaultClearance
+                val options = when (optionType) {
+                    ConflictMetadata.RESOLVE_HDG -> getHeadingOptions(origClearance)
+                    ConflictMetadata.RESOLVE_IAS -> getIasOptions(origClearance)
+                    else -> throw IllegalArgumentException("Unknown individual resolution option $optionType")
+                }
+
+                val successAction = testOptions(resolveAc, options, optionType, gs, aircraft, stepsBack, currentOverrides, stopServer)
+                if (successAction === TEST_OPTIONS_RESET_RECEIVED) return null
+                if (successAction != null) {
 //                FileLog.info(
 //                    "$envName PythonGymnasiumBridge",
-//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true (MVA) ac=$callsign1"
+//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true, conflict=$conflict"
 //                )
-                return true
-            }
-        } else if (ac1Loc == ac2Loc) {
-            // Either both are on LOC, or both are not on LOC - can only be normal conflict (not wake)
-            // Choose IAS option if both on LOC, or heading option if both not on LOC
-            val optionFunction = if (ac1Loc) PythonGymnasiumBridge::getIasOptions else PythonGymnasiumBridge::getHeadingOptions
-            val optionName = if (ac1Loc) "ias" else "hdg"
-
-            val orig1 = currentOverrides[callsign1]?.get(2) ?: snapshotTn.actions[callsign1]?.get(2) ?: 2
-            val options1 = optionFunction(orig1)
-            val succ1 = testOptions(callsign1, options1, optionName, gs, aircraft, stepsBack, currentOverrides, stopServer)
-            if (succ1 === TEST_OPTIONS_RESET_RECEIVED) return null
-            if (succ1 != null) {
-                currentOverrides[callsign1] = succ1
-//                FileLog.info(
-//                    "$envName PythonGymnasiumBridge",
-//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true, ac=$callsign1, onLoc=$ac1Loc"
-//                )
-                return true
-            }
-            if (callsign2 != null) {
-                val orig2 = currentOverrides[callsign2]?.get(2) ?: snapshotTn.actions[callsign2]?.get(2) ?: 2
-                val options2 = optionFunction(orig2)
-                val succ2 = testOptions(callsign2, options2, optionName, gs, aircraft, stepsBack, currentOverrides, stopServer)
-                if (succ2 === TEST_OPTIONS_RESET_RECEIVED) return null
-                if (succ2 != null) {
-                    currentOverrides[callsign2] = succ2
-//                    FileLog.info(
-//                        "$envName PythonGymnasiumBridge",
-//                        "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true, ac=$callsign2, onLoc=$ac2Loc"
-//                    )
+                    currentOverrides[resolveAc] = successAction
                     return true
                 }
-            }
-        } else {
-            // One of aircraft is on LOC, the other is not
-            // Can be aircraft-aircraft conflict, or wake conflict (ac2 will be null if this is the case)
-            val acToResolve = if (ac2 == null) ac1  // Wake conflict, resolve only ac1
-            else if (ac1Loc) ac2 else ac1  // Aircraft-aircraft conflict, resolve aircraft not on LOC
-            val acOnLoc = if (acToResolve == ac1) ac1Loc else ac2Loc!!
-            val callsignToResolve = if (acToResolve == ac1) callsign1 else callsign2!!
-            val optionFunction = if (acOnLoc) PythonGymnasiumBridge::getIasOptions else PythonGymnasiumBridge::getHeadingOptions
-            val optionName = if (acOnLoc) "ias" else "hdg"
-
-            val orig = currentOverrides[callsignToResolve]?.get(0) ?: snapshotTn.actions[callsignToResolve]?.get(0) ?: 2
-            val options = optionFunction(orig)
-            val succ = testOptions(callsignToResolve, options, optionName, gs, aircraft, stepsBack, currentOverrides, stopServer)
-            if (succ === TEST_OPTIONS_RESET_RECEIVED) return null
-            if (succ != null) {
-                currentOverrides[callsignToResolve] = succ
-//                FileLog.info(
-//                    "$envName PythonGymnasiumBridge",
-//                    "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=true " +
-//                            "changed=$firstCallsign locCap=$ac1Loc kept=$secondCallsign locCap=$ac2Loc"
-//                )
-                return true
             }
         }
 
 //        FileLog.info(
 //            "$envName PythonGymnasiumBridge",
-//            "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=false (reason=${conflict.reason}) ac1=$callsign1 ac2=$callsign2"
+//            "CR resolveSingleConflict end: baseSnapshotT=$baseTimestep, success=false, conflict=$conflict"
 //        )
         return false
     }
@@ -566,7 +572,7 @@ class PythonGymnasiumBridge(
     private fun testOptions(
         testAc: String,
         options: IntArray,
-        optionType: String,
+        optionType: Int,
         gs: GameServer,
         aircraft: GdxArrayMap<String, Aircraft>,
         stepsBack: Int,
@@ -590,8 +596,7 @@ class PythonGymnasiumBridge(
 
             var success = true
 
-            for (step in 0 until CONFLICT_RESOLUTION_LOOKBACK_STEPS) {
-                // Do not count this step since it is just for planning
+            for (step in 0 until stepsBack) {
                 val (_, conflicts) = writeState(aircraft, stepCountModifier = -1)
 
                 if (step > 0) {
@@ -629,8 +634,8 @@ class PythonGymnasiumBridge(
                     val orig = originalActions[testAc] ?: intArrayOf(2, 2, 2)
                     val newAction = overrides[testAc]?.clone() ?: orig.clone()
                     when (optionType) {
-                        "hdg" -> newAction[0] = opt
-                        "ias" -> newAction[2] = opt
+                        ConflictMetadata.RESOLVE_HDG -> newAction[0] = opt
+                        ConflictMetadata.RESOLVE_IAS -> newAction[2] = opt
                     }
                     overrides[testAc] = newAction
                 }
@@ -653,8 +658,8 @@ class PythonGymnasiumBridge(
                     val orig = originalActions[testAc] ?: intArrayOf(2, 2, 2)
                     val newAction = currentOverrides[testAc]?.clone() ?: orig.clone()
                     when (optionType) {
-                        "hdg" -> newAction[0] = opt
-                        "ias" -> newAction[2] = opt
+                        ConflictMetadata.RESOLVE_HDG -> newAction[0] = opt
+                        ConflictMetadata.RESOLVE_IAS -> newAction[2] = opt
                     }
                     return newAction
                 }

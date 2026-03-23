@@ -231,6 +231,11 @@ class PythonGymnasiumBridge(
             gs.score = 0
 
             aircraftAdded = 0
+            allMvaConflictCount = 0
+            allAircraftConflictCountNoLoc = 0
+            allAircraftConflictCountLoc = 0
+            allWakeConflictCountNoLoc = 0
+            allWakeConflictCountLoc = 0
             rlStateRestoreManager.clearSnapshots()
             resetAircraft()
             spawnedInCurrentSession = aircraft.size

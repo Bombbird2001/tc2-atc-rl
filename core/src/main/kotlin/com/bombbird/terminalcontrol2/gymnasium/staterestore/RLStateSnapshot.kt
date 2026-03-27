@@ -20,6 +20,7 @@ data class Snapshot(
     val bridgeSpawnedInSession: Int? = null,
     val bridgeLandedInSession: Int? = null,
     val bridgeAddedInSession: Int? = null,
+    val bridgeClearanceChangesInSession: Int? = null,
     val bridgeAgentCallsigns: List<String?>? = null,
     val rewardHandlerState: RewardHandlerSnapshotData? = null,
     val actions: Map<String, IntArray> = emptyMap()

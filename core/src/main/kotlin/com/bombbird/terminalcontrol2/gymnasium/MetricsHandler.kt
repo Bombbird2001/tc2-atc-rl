@@ -16,7 +16,8 @@ class MetricsHandler(private val metricOffsetStart: Int) {
         const val MVA_CONFLICT_RATE_BEFORE_RES = 8
         const val WAKE_CONFLICT_RATE_NO_LOC_BEFORE_RES = 9
         const val WAKE_CONFLICT_RATE_LOC_BEFORE_RES = 10
-        const val AIRCRAFT_SPAWN_GROUP = 11
+        const val CLEARANCE_CHANGE_RATE = 11
+        const val AIRCRAFT_SPAWN_GROUP = 12
 
         const val DEFAULT_METRIC_SIZE_BYTES = 4
     }
@@ -33,6 +34,7 @@ class MetricsHandler(private val metricOffsetStart: Int) {
         MVA_CONFLICT_RATE_BEFORE_RES to DEFAULT_METRIC_SIZE_BYTES,
         WAKE_CONFLICT_RATE_NO_LOC_BEFORE_RES to DEFAULT_METRIC_SIZE_BYTES,
         WAKE_CONFLICT_RATE_LOC_BEFORE_RES to DEFAULT_METRIC_SIZE_BYTES,
+        CLEARANCE_CHANGE_RATE to DEFAULT_METRIC_SIZE_BYTES,
         AIRCRAFT_SPAWN_GROUP to 1 * AIRCRAFT_TO_SPAWN,
     )
 

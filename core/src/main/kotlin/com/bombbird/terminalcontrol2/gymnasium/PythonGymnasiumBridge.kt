@@ -106,6 +106,7 @@ class PythonGymnasiumBridge(
     private var allAircraftConflictCountLoc = 0
     private var allWakeConflictCountNoLoc = 0
     private var allWakeConflictCountLoc = 0
+    private var clearanceChangesInCurrentSession = 0
 
 //    private val noLandAircraftTypeCount = GdxArrayMap<String, Int>()
 //    private val noLandRecatCount = GdxArrayMap<Char, Int>()
@@ -166,6 +167,7 @@ class PythonGymnasiumBridge(
         snapshot.bridgeLandedInSession?.let { landedInCurrentSession = it }
         snapshot.rewardHandlerState?.let { rewardHandler.applyState(it) }
         snapshot.bridgeAddedInSession?.let { aircraftAdded = it }
+        snapshot.bridgeClearanceChangesInSession?.let { clearanceChangesInCurrentSession = it }
         restoreAgentIdToAircraftFromCallsigns(snapshot.bridgeAgentCallsigns, gs)
     }
 
@@ -174,6 +176,7 @@ class PythonGymnasiumBridge(
         landed: Int,
         reward: com.bombbird.terminalcontrol2.gymnasium.staterestore.RewardHandlerSnapshotData,
         added: Int,
+        clearanceChanges: Int,
         agentCallsigns: List<String?>,
         gs: GameServer
     ) {
@@ -181,6 +184,7 @@ class PythonGymnasiumBridge(
         landedInCurrentSession = landed
         rewardHandler.applyState(reward)
         aircraftAdded = added
+        clearanceChangesInCurrentSession = clearanceChanges
         restoreAgentIdToAircraftFromCallsigns(agentCallsigns, gs)
     }
 
@@ -236,6 +240,7 @@ class PythonGymnasiumBridge(
             allAircraftConflictCountLoc = 0
             allWakeConflictCountNoLoc = 0
             allWakeConflictCountLoc = 0
+            clearanceChangesInCurrentSession = 0
             rlStateRestoreManager.clearSnapshots()
             resetAircraft()
             spawnedInCurrentSession = aircraft.size
@@ -245,6 +250,7 @@ class PythonGymnasiumBridge(
             val preWriteSpawned = spawnedInCurrentSession
             val preWriteLanded = landedInCurrentSession
             val preWriteAdded = aircraftAdded
+            val preWriteClearanceChanges = clearanceChangesInCurrentSession
             val preWriteAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }.toList()
             val preWriteRewardState = rewardHandler.getStateForSnapshot()
 
@@ -255,6 +261,7 @@ class PythonGymnasiumBridge(
                     bridgeSpawnedInSession = preWriteSpawned,
                     bridgeLandedInSession = preWriteLanded,
                     bridgeAddedInSession = preWriteAdded,
+                    bridgeClearanceChangesInSession = preWriteClearanceChanges,
                     bridgeAgentCallsigns = preWriteAgentCallsigns,
                     rewardHandlerState = preWriteRewardState
                 )
@@ -299,6 +306,7 @@ class PythonGymnasiumBridge(
             val preWriteSpawned = spawnedInCurrentSession
             val preWriteLanded = landedInCurrentSession
             val preWriteAdded = aircraftAdded
+            val preWriteClearanceChanges = clearanceChangesInCurrentSession
             val preWriteAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }.toList()
             val preWriteRewardState = rewardHandler.getStateForSnapshot()
 
@@ -360,6 +368,7 @@ class PythonGymnasiumBridge(
                         bridgeSpawnedInSession = preWriteSpawned,
                         bridgeLandedInSession = preWriteLanded,
                         bridgeAddedInSession = preWriteAdded,
+                        bridgeClearanceChangesInSession = preWriteClearanceChanges,
                         bridgeAgentCallsigns = preWriteAgentCallsigns,
                         rewardHandlerState = preWriteRewardState
                     )
@@ -488,6 +497,7 @@ class PythonGymnasiumBridge(
         val backupLanded = landedInCurrentSession
         val backupReward = rewardHandler.getStateForSnapshot()
         val backupAdded = aircraftAdded
+        val backupClearanceChanges = clearanceChangesInCurrentSession
         val backupAgentCallsigns = Array(agentIdToAircraft.size) { agentIdToAircraft[it]?.get(AircraftInfo.mapper)?.icaoCallsign }
         val backupShm = sharedMemoryIPC.readBytes(0, shmFileSize)
 
@@ -513,6 +523,7 @@ class PythonGymnasiumBridge(
                     landed = backupLanded,
                     reward = backupReward,
                     added = backupAdded,
+                    clearanceChanges = backupClearanceChanges,
                     agentCallsigns = backupAgentCallsigns.asList(),
                     gs = gs
                 )
@@ -821,6 +832,7 @@ class PythonGymnasiumBridge(
         metricsHandler.logToSharedMemory(MetricsHandler.MVA_CONFLICT_RATE_BEFORE_RES, allMvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
         metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_NO_LOC_BEFORE_RES, allWakeConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
         metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_LOC_BEFORE_RES, allWakeConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.CLEARANCE_CHANGE_RATE, clearanceChangesInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
 
         // Copy all aircraft states
         sharedMemoryIPC.copyByteArray(constantSize + MAX_RL_AIRCRAFT * sizePerInstruction + additionalPadding, stateArray)
@@ -962,6 +974,7 @@ class PythonGymnasiumBridge(
             val changed = prevClearance.clearedAlt != clearedAlt || prevClearance.vectorHdg != clearedHdg || prevClearance.clearedIas != clearedIas
 
             if (changed) {
+                clearanceChangesInCurrentSession++
                 val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
                 addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
             }

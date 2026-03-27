@@ -784,7 +784,7 @@ class PythonGymnasiumBridge(
                 stateArray.put(1)  // Aircraft exists
                 stateArray.put(currShouldTerminate)
                 nonTerminateCount += 1 - currShouldTerminate
-                var altMask = 15
+                var altMask = 31
                 val ongoingConflict = conflicts.find { it.entity1 == currAircraft || it.entity2 == currAircraft }
                 if (ongoingConflict == null) for (predConflict in predictedConflicts) {
                     if (predConflict.aircraft1 != currAircraft && predConflict.aircraft2 != currAircraft) continue

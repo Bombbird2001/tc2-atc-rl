@@ -24,6 +24,7 @@ object PosixLibC: Library {
     external fun sem_timedwait(sem: Pointer, absTimeout: Timespec): Int
     external fun sem_post(sem: Pointer): Int
     external fun sem_close(sem: Pointer)
+    external fun sem_unlink(name: String): Int
 }
 
 object MacOSLibC: Library {
@@ -41,4 +42,5 @@ object MacOSLibC: Library {
     external fun sem_trywait(sem: Pointer): Int
     external fun sem_post(sem: Pointer): Int
     external fun sem_close(sem: Pointer)
+    external fun sem_unlink(name: String): Int
 }

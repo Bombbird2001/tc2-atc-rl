@@ -12,10 +12,12 @@ import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.networking.GameServer
+import com.bombbird.terminalcontrol2.networking.RLHeadlessTrainingConfig
 import com.bombbird.terminalcontrol2.systems.TrafficSystemInterval
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.ai.reward.RewardHandler
+import com.bombbird.terminalcontrol2.traffic.ArrivalsToControlSpawner
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.floats.plusOrMinus
@@ -527,7 +529,17 @@ object RLStateRestoreTest : FunSpec() {
         test("RewardHandler getStateForSnapshot and applyState round-trip") {
             val conflictManager = ConflictManager()
             val handler = RewardHandler(
-                conflictManager, false, 1f, 0.5f, 0.5f, 0.5f
+                conflictManager,
+                RLHeadlessTrainingConfig(
+                    envId = "test",
+                    evalMode = false,
+                    goalReward = 1f,
+                    mvaConflictPenalty = 0.5f,
+                    aircraftConflictPenalty = 0.5f,
+                    wakeConflictPenalty = 0.5f,
+                    randomSpawnChance = 0f,
+                    scriptedSpawnFile = null,
+                ),
             )
             val state = RewardHandlerSnapshotData(
                 acPrevLocDistPx = Array(MAX_RL_AIRCRAFT) { if (it == 0) 200f else null },
@@ -592,7 +604,7 @@ object RLStateRestoreTest : FunSpec() {
     }
 
     private fun ensureTrafficSystem(gs: GameServer) {
-        gs.engine.addSystem(TrafficSystemInterval())
+        gs.engine.addSystem(TrafficSystemInterval(ArrivalsToControlSpawner()))
     }
 
     private fun ensureAirportWithRunway(gs: GameServer) {

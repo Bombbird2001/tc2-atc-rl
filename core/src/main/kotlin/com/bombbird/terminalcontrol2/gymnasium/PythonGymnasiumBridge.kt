@@ -37,6 +37,10 @@ import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.components.FlightType
 import com.bombbird.terminalcontrol2.components.SpawnGroup
+import com.bombbird.terminalcontrol2.gymnasium.staterestore.RewardHandlerSnapshotData
+import com.bombbird.terminalcontrol2.gymnasium.staterestore.Snapshot
+import com.bombbird.terminalcontrol2.networking.RLHeadlessTrainingConfig
+import com.bombbird.terminalcontrol2.traffic.ArrivalsToControlSpawner
 import com.bombbird.terminalcontrol2.utilities.FileLog
 import com.bombbird.terminalcontrol2.utilities.addNewClearanceToPendingClearances
 import com.bombbird.terminalcontrol2.utilities.byte
@@ -57,9 +61,11 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 class PythonGymnasiumBridge(
-    envId: String, private val conflictManager: ConflictManager, private val trajectorySystemInterval: TrajectorySystemInterval, private val evalMode: Boolean,
-    goalReward: Float, mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
-): GymnasiumBridge {
+    private val rlConfig: RLHeadlessTrainingConfig,
+    private val conflictManager: ConflictManager,
+    private val trajectorySystemInterval: TrajectorySystemInterval,
+    private val arrivalSpawnController: ArrivalsToControlSpawner,
+) : GymnasiumBridge {
     companion object {
         const val FRAMES_PER_ACTION = 10 * 30
         const val CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS = 10
@@ -120,13 +126,13 @@ class PythonGymnasiumBridge(
     private val additionalPadding = (8 - (constantSize + MAX_RL_AIRCRAFT * sizePerInstruction) % 8) % 8
     private val shmFileSize = constantSize + MAX_RL_AIRCRAFT * sizePerInstruction + additionalPadding + MAX_RL_AIRCRAFT * sizePerAircraft
 
-    private val rewardHandler = RewardHandler(conflictManager, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty)
+    private val rewardHandler = RewardHandler(conflictManager, rlConfig)
     private val rlStateRestoreManager = RLStateRestoreManager(max(CONFLICT_RESOLUTION_NO_LOC_LOOKBACK_STEPS, CONFLICT_RESOLUTION_LOC_LOOKBACK_STEPS))
-    private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(envId, shmFileSize).apply {
+    private val sharedMemoryIPC: SharedMemoryIPC = SharedMemoryIPCFactory.getSharedMemory(rlConfig.envId, shmFileSize).apply {
         metricsHandler.init(this)
     }
 
-    private val envName = "[env$envId]"
+    private val envName = "[env${rlConfig.envId}]"
 
     private fun makeGhostAircraftEntity(callsign: String): Entity {
         // Create an entity that is safe for writeState serialization, but do NOT add it back into gs.aircraft.
@@ -162,7 +168,7 @@ class PythonGymnasiumBridge(
         }
     }
 
-    private fun applyBridgeStateFromSnapshot(snapshot: com.bombbird.terminalcontrol2.gymnasium.staterestore.Snapshot, gs: GameServer) {
+    private fun applyBridgeStateFromSnapshot(snapshot: Snapshot, gs: GameServer) {
         snapshot.bridgeSpawnedInSession?.let { spawnedInCurrentSession = it }
         snapshot.bridgeLandedInSession?.let { landedInCurrentSession = it }
         snapshot.rewardHandlerState?.let { rewardHandler.applyState(it) }
@@ -174,7 +180,7 @@ class PythonGymnasiumBridge(
     private fun applyBridgeStateFromBackup(
         spawned: Int,
         landed: Int,
-        reward: com.bombbird.terminalcontrol2.gymnasium.staterestore.RewardHandlerSnapshotData,
+        reward: RewardHandlerSnapshotData,
         added: Int,
         clearanceChanges: Int,
         agentCallsigns: List<String?>,
@@ -331,7 +337,7 @@ class PythonGymnasiumBridge(
             var actionOverrides: MutableMap<String, IntArray>? = null
             var shouldAddSnapshot = true
 
-            if (evalMode && conflicts.notEmpty()) {
+            if (rlConfig.evalMode && conflicts.notEmpty()) {
                 // Only resolve conflicts that require the largest rollback stepsBack (10 = no-LOC, 30 = LOC)
                 val (selectedConflicts, stepsBack) = getConflictsToResolve(conflicts)
                 if (rlStateRestoreManager.snapshotCount() >= stepsBack) {
@@ -856,7 +862,7 @@ class PythonGymnasiumBridge(
             }
         }
 
-        return Pair(shouldTerminate == 1.byte || nonTerminateCount == 0, filteredConflicts)
+        return Pair((shouldTerminate == 1.byte || nonTerminateCount == 0) && arrivalSpawnController.doneSpawning, filteredConflicts)
     }
 
     private fun performAction(aircraft: GdxArrayMap<String, Aircraft>, overrides: Map<String, IntArray> = emptyMap()): Map<String, IntArray> {

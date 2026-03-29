@@ -335,8 +335,7 @@ data class SpawnGroup(var spawnGroup: Byte): Component {
 
         const val SPAWN_NORTH: Byte = 0
         const val SPAWN_EAST: Byte = 1
-        const val SPAWN_TABUN: Byte = 2
-        const val SPAWN_SAUNA: Byte = 3
+        const val SPAWN_WEST: Byte = 2
         const val SPAWN_SOUTH: Byte = 4
     }
 }

@@ -23,10 +23,18 @@ data class Snapshot(
     val bridgeClearanceChangesInSession: Int? = null,
     val bridgeAgentCallsigns: List<String?>? = null,
     val rewardHandlerState: RewardHandlerSnapshotData? = null,
+    /** Scripted spawn progress for [com.bombbird.terminalcontrol2.traffic.ArrivalsToControlSpawner] (random policy unchanged). */
+    val spawnHandlerState: SpawnHandlerSnapshotData? = null,
     val actions: Map<String, IntArray> = emptyMap()
 ) {
     fun callsigns(): Set<String> = aircraft.keys
 }
+
+/** Snapshot of scripted spawn state for restore */
+data class SpawnHandlerSnapshotData(
+    val scriptedNextIndex: Int,
+    val secondsSinceLastScriptedSpawn: Int
+)
 
 /** Snapshot of RewardHandler state for restore (prev LOC dist, prev alt, prev clearance, conflict counts). */
 data class RewardHandlerSnapshotData(

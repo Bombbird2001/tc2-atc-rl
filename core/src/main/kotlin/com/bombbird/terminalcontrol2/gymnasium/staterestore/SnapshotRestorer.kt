@@ -117,6 +117,11 @@ fun restoreSnapshot(snapshot: Snapshot, gs: GameServer) {
             it.previousArrivalSpawnOffsetS = timers.second
         }
     }
+
+    // 8. Restore scripted spawn progress (ArrivalsToControlSpawner)
+    snapshot.spawnHandlerState?.let { data ->
+        trafficSystem.arrivalsToControlSpawner.applyStateFromSnapshot(data)
+    }
 }
 
 private fun applyAircraftSnapshotData(e: Entity, data: AircraftSnapshotData) {

@@ -14,15 +14,17 @@ import com.bombbird.terminalcontrol2.sounds.StubTextToSpeech
 
 /** Launches a headless application for the purposes of atc-rl. */
 fun main(args: Array<String>) {
-    if (args.size != 8) {
+    if (args.size != 9) {
         throw IllegalArgumentException(
             "Must pass arguments for envId, evalMode, goalReward, mvaConflictPenalty, aircraftConflictPenalty, " +
-                    "wakeConflictPenalty, randomSpawnChance, and scriptedSpawnFile (use empty string for random-only)"
+                    "wakeConflictPenalty, randomSpawnChance, scriptedSpawnFile (use empty string for random-only), " +
+                    "and debugSnapshotCsvPath (use empty string to disable)"
         )
     }
     TerminalControl2(StubExternalFileHandler, StubTextToSpeech, StubDiscordHandler, StubAchievementHandler)
     Gdx.files = Lwjgl3Files()
     val scripted = args[7].takeIf { it.isNotBlank() }
+    val debugPath = args[8].takeIf { it.isNotBlank() }
     GameServer.newRLGameServer(
         "TCWS",
         RLHeadlessTrainingConfig(
@@ -34,6 +36,7 @@ fun main(args: Array<String>) {
             wakeConflictPenalty = args[5].toFloat(),
             randomSpawnChance = args[6].toFloat(),
             scriptedSpawnFile = scripted,
+            debugSnapshotCsvPath = debugPath,
         )
     )
 }

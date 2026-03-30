@@ -52,6 +52,8 @@ data class RLHeadlessTrainingConfig(
     val randomSpawnChance: Float,
     /** Absolute path to scripted spawn CSV, or null/blank for random RL spawning only. */
     val scriptedSpawnFile: String? = null,
+    /** Absolute output CSV path/dir for conflict-resolution debug snapshots; null/blank disables. */
+    val debugSnapshotCsvPath: String? = null,
 )
 
 /** Defaults when [GameServer] is not started with explicit RL training settings (multiplayer, tests, etc.). */
@@ -64,6 +66,7 @@ internal val DEFAULT_RL_HEADLESS_TRAINING_CONFIG = RLHeadlessTrainingConfig(
     wakeConflictPenalty = 0f,
     randomSpawnChance = 0f,
     scriptedSpawnFile = null,
+    debugSnapshotCsvPath = null,
 )
 
 /**
@@ -133,7 +136,7 @@ class GameServer private constructor(
                     aircraftConflictPenalty = EVAL_AIRCRAFT_CONFLICT_PENALTY,
                     wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY,
                     randomSpawnChance = 0f,
-                    scriptedSpawnFile = "/Users/bombbird2001/Desktop/tc2-atc-rl/scripted-flights/jan_1.csv",
+                    scriptedSpawnFile = "/Users/bombbird2001/Desktop/tc2-atc-rl/scripted-flights/feb_1.csv",
                 ),
             )
         }

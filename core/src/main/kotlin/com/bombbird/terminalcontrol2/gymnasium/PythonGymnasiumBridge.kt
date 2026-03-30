@@ -55,9 +55,146 @@ import ktx.collections.GdxArrayMap
 import ktx.collections.toGdxArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.io.File
+import java.io.FileWriter
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+internal fun appendConflictDebugCsv(
+    outputPathOrDir: String,
+    envId: String,
+    snapshot: Snapshot,
+    conflicts: GdxArray<Conflict>,
+) {
+    val file = resolveConflictDebugCsvFile(outputPathOrDir, envId)
+    file.parentFile?.mkdirs()
+
+    val needsHeader = !file.exists() || file.length() == 0L
+    FileWriter(file, true).use { fw ->
+        if (needsHeader) {
+            fw.appendLine(
+                listOf(
+                    "record_type",
+                    "write_id",
+                    "env_id",
+                    "snapshot_timestep",
+                    "callsign",
+                    "icao_type",
+                    "x",
+                    "y",
+                    "altitude_ft",
+                    "tas_kts",
+                    "vs_fpm",
+                    "track_deg",
+                    "cleared_hdg_deg",
+                    "cleared_alt_ft",
+                    "cleared_ias_kt",
+                    "loc_cap",
+                    "ac1_callsign",
+                    "ac2_callsign",
+                    "reason_code",
+                    "reason_name",
+                ).joinToString(",")
+            )
+        }
+
+        val writeId = System.currentTimeMillis().toString()
+        val timestep = snapshot.timestep
+
+        for ((callsign, data) in snapshot.aircraft) {
+            val trackDeg = modulateHeading(convertWorldAndRenderDeg(data.direction.trackUnitVector.angleDeg()))
+            val cleared = data.clearanceState
+            fw.appendLine(
+                csvJoin(
+                    "SNAPSHOT_ROW",
+                    writeId,
+                    envId,
+                    timestep,
+                    callsign,
+                    data.aircraftInfo.icaoType,
+                    data.position.x,
+                    data.position.y,
+                    data.altitude.altitudeFt,
+                    data.speed.speedKts,
+                    data.speed.vertSpdFpm,
+                    trackDeg,
+                    cleared.vectorHdg,
+                    cleared.clearedAlt,
+                    cleared.clearedIas,
+                    data.hasLocalizerCaptured,
+                    "",
+                    "",
+                    "",
+                    "",
+                )
+            )
+        }
+
+        for (i in 0 until conflicts.size) {
+            val c = conflicts[i]
+            val sc = c.getSerialisableObject()
+            fw.appendLine(
+                csvJoin(
+                    "CONFLICT_ROW",
+                    writeId,
+                    envId,
+                    timestep,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    sc.name1,
+                    sc.name2 ?: "",
+                    sc.reason.toInt(),
+                    conflictReasonName(sc.reason),
+                )
+            )
+        }
+    }
+}
+
+private fun resolveConflictDebugCsvFile(outputPathOrDir: String, envId: String): File {
+    val f = File(outputPathOrDir)
+    return if (outputPathOrDir.lowercase().endsWith(".csv")) {
+        f
+    } else {
+        File(f, "conflict_debug_$envId.csv")
+    }
+}
+
+private fun conflictReasonName(reason: Byte): String = when (reason) {
+    Conflict.NORMAL_CONFLICT -> "NORMAL_CONFLICT"
+    Conflict.SAME_APP_LESS_THAN_10NM -> "SAME_APP_LESS_THAN_10NM"
+    Conflict.PARALLEL_DEP_APP -> "PARALLEL_DEP_APP"
+    Conflict.PARALLEL_INDEP_APP_NTZ -> "PARALLEL_INDEP_APP_NTZ"
+    Conflict.MVA -> "MVA"
+    Conflict.SID_STAR_MVA -> "SID_STAR_MVA"
+    Conflict.RESTRICTED -> "RESTRICTED"
+    Conflict.WAKE_INFRINGE -> "WAKE_INFRINGE"
+    Conflict.STORM -> "STORM"
+    Conflict.EMERGENCY_SEPARATION_CONFLICT -> "EMERGENCY_SEPARATION_CONFLICT"
+    Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN -> "RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN"
+    Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN -> "RL_WAKE_CONFLICT_INCREASED_MARGIN"
+    else -> "UNKNOWN"
+}
+
+private fun csvJoin(vararg values: Any?): String = values.joinToString(",") { v ->
+    val s = v?.toString() ?: ""
+    if (s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r')) {
+        "\"" + s.replace("\"", "\"\"") + "\""
+    } else {
+        s
+    }
+}
 
 class PythonGymnasiumBridge(
     private val rlConfig: RLHeadlessTrainingConfig,
@@ -132,6 +269,7 @@ class PythonGymnasiumBridge(
     }
 
     private val envName = "[env${rlConfig.envId}]"
+    private var logEpisode = -1
 
     private fun makeGhostAircraftEntity(callsign: String): Entity {
         // Create an entity that is safe for writeState serialization, but do NOT add it back into gs.aircraft.
@@ -247,6 +385,7 @@ class PythonGymnasiumBridge(
             arrivalSpawnController.reset(gs)
             spawnedInCurrentSession = aircraft.size
             rewardHandler.rewardReset()
+            logEpisode++
 
             val baseSnapshot = rlStateRestoreManager.getSnapshot(gs)
             val preWriteSpawned = spawnedInCurrentSession
@@ -334,6 +473,9 @@ class PythonGymnasiumBridge(
             var shouldAddSnapshot = true
 
             if (rlConfig.evalMode && conflicts.notEmpty()) {
+                // Temp snaphost solely for saving to CSV for manual analysis if needed
+                val tempSnapshot = rlStateRestoreManager.getSnapshot(gs)
+
                 // Only resolve conflicts that require the largest rollback stepsBack (10 = no-LOC, 30 = LOC)
                 val (selectedConflicts, stepsBack) = getConflictsToResolve(conflicts)
                 if (rlStateRestoreManager.snapshotCount() >= stepsBack) {
@@ -358,9 +500,17 @@ class PythonGymnasiumBridge(
                         // stepCountModifier = -stepsBack offsets the training step counter for the rolled-back frames.
                         val (isTerminating2, _) = writeState(aircraft, stepCountModifier = (-stepsBack).byte)
                         terminating = isTerminating2
+                    } else {
+                        // Failure (actionOverrides == null): backup already restored inside resolveConflicts; skip this writeState
+                        // to avoid applying writeState twice for the same logical time T.
+                        gs.rlHeadlessTrainingConfig.debugSnapshotCsvPath?.takeIf { it.isNotBlank() }?.let { outPath ->
+                            try {
+                                appendConflictDebugCsv(outPath, "${rlConfig.envId}_$logEpisode", tempSnapshot, conflicts)
+                            } catch (t: Throwable) {
+                                FileLog.warn("$envName PythonGymnasiumBridge", "Failed to write conflict debug CSV: ${t.message}")
+                            }
+                        }
                     }
-                    // Failure (actionOverrides == null): backup already restored inside resolveConflicts; skip this writeState
-                    // to avoid applying writeState twice for the same logical time T.
                 }
             }
 

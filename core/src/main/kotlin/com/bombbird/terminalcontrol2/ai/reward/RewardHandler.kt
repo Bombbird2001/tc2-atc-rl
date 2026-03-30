@@ -173,7 +173,7 @@ class RewardHandler(
             // 1 @>=200 knots, 1.5 @<=150 knots
             // 1.1 @0 feet, 1@10000 feet, 0.8@>=30000 feet
             val iasMult = MathUtils.clamp((300 - currIas.iasKt) / 100f, 1f, 1.5f)
-            val altMult = 1  // MathUtils.clamp(1 + (10000 - currAlt.altitudeFt) / 10000, 0.8f, 1f)
+            val altMult = MathUtils.clamp(1 + (10000 - currAlt.altitudeFt) / 10000, 0.8f, 1f)
             // Constant factor of 1 for time + fuel consumption factor
             val multiplier = 1 + iasMult * altMult
             acReward -= PER_STEP_PENALTY * multiplier

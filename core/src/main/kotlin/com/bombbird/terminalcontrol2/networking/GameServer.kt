@@ -804,22 +804,7 @@ class GameServer private constructor(
             pendingRunnablesQueue.poll()?.run() ?: break
         }
 
-        pythonGymBridge.update(aircraft, this::stopServer, this) {
-            // Reset function - despawn current aircraft, create new aircraft
-            for (i in aircraft.size - 1 downTo 0) {
-                val ac = aircraft.getValueAt(i)
-                despawnAircraft(ac.entity)
-            }
-            aircraft.clear()
-
-            val airport = airports.getValueAt(0).entity
-
-            // Force spawn 1 aircraft on start
-//            createRandomArrivalForAirport(airport, this)
-            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
-
-            return@update aircraft
-        }
+        pythonGymBridge.update(aircraft, this::stopServer, this)
     }
 
     /**

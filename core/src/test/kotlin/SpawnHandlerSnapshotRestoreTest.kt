@@ -9,7 +9,6 @@ import com.bombbird.terminalcontrol2.traffic.ArrivalsToControlSpawner
 import com.bombbird.terminalcontrol2.traffic.ScriptedSpawnEntry
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import testInitialiseGameAndServer
 
 object SpawnHandlerSnapshotRestoreTest : FunSpec() {
     init {

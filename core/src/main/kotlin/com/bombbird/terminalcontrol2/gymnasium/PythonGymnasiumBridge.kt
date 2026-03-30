@@ -18,7 +18,6 @@ import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.components.VisualCaptured
 import com.bombbird.terminalcontrol2.entities.Aircraft
-import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.ENABLE_TRAJECTORY_ALTITUDE_MASKING
@@ -202,10 +201,7 @@ class PythonGymnasiumBridge(
         spawnedInCurrentSession++
     }
 
-    override fun update(
-        aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit,
-        gs: GameServer, resetAircraft: () -> GdxArrayMap<String, Aircraft>
-    ) {
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, gs: GameServer) {
         if (loopExited) return
 
         if (!trainerInitialized) {
@@ -248,8 +244,7 @@ class PythonGymnasiumBridge(
             allWakeConflictCountLoc = 0
             clearanceChangesInCurrentSession = 0
             rlStateRestoreManager.clearSnapshots()
-            resetAircraft()
-            arrivalSpawnController.reset()
+            arrivalSpawnController.reset(gs)
             spawnedInCurrentSession = aircraft.size
             rewardHandler.rewardReset()
 

@@ -44,11 +44,24 @@ class ArrivalsToControlSpawner {
             return (policy == Policy.SCRIPTED && scriptedNextIndex >= scriptedEntries.size) || (policy == Policy.RANDOM_RL && spawnedCount >= AIRCRAFT_TO_SPAWN)
         }
 
-    fun reset() {
+    fun reset(gs: GameServer) {
         // Only resets the counter, will reuse the entries
         scriptedNextIndex = 0
         secondsSinceLastScriptedSpawn = 0f
-        spawnedCount = 0
+
+        // Despawn current aircraft, create new aircraft
+        for (i in gs.aircraft.size - 1 downTo 0) {
+            val ac = gs.aircraft.getValueAt(i)
+            despawnAircraft(ac.entity)
+        }
+        gs.aircraft.clear()
+
+        val airport = gs.airports[0]!!.entity
+        spawnedCount = if (policy == Policy.RANDOM_RL) {
+            createRandomArrivalForAirport(airport, gs)
+            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
+            1
+        } else 0
     }
 
     /**

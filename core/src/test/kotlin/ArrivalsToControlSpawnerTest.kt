@@ -36,7 +36,6 @@ private class FakeBridge(private val fixedCount: Int) : GymnasiumBridge {
         aircraft: GdxArrayMap<String, Aircraft>,
         stopServer: () -> Unit,
         gs: GameServer,
-        resetAircraft: () -> GdxArrayMap<String, Aircraft>
     ) {
     }
 }

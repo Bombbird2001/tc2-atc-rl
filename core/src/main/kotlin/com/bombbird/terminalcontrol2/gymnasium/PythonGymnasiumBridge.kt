@@ -249,6 +249,7 @@ class PythonGymnasiumBridge(
             clearanceChangesInCurrentSession = 0
             rlStateRestoreManager.clearSnapshots()
             resetAircraft()
+            arrivalSpawnController.reset()
             spawnedInCurrentSession = aircraft.size
             rewardHandler.rewardReset()
 
@@ -730,10 +731,13 @@ class PythonGymnasiumBridge(
             val ac = aircraft.getValueAt(i).entity
             if (agentIdToAircraft.contains(ac)) continue
 
-            if (agentIdToAircraft[aircraftAdded] != null) throw IllegalStateException("$envName: Expected agent $aircraftAdded to be null before assignment")
-            agentIdToAircraft[aircraftAdded] = ac
+            val slotToUse = if (rlConfig.scriptedSpawnFile == null) aircraftAdded
+            else agentIdToAircraft.indexOf(null)
+            if (slotToUse == -1) throw IllegalStateException("$envName: No free slots found")
+            if (agentIdToAircraft[slotToUse] != null) throw IllegalStateException("$envName: Expected agent $aircraftAdded to be null before assignment")
+            agentIdToAircraft[slotToUse] = ac
             metricsHandler.logToSharedMemory(  // Spawn group for each agent
-                MetricsHandler.AIRCRAFT_SPAWN_GROUP, aircraftAdded,
+                MetricsHandler.AIRCRAFT_SPAWN_GROUP, slotToUse,
                 ac[SpawnGroup.mapper]?.spawnGroup!!
             )
             aircraftAdded++
@@ -826,19 +830,19 @@ class PythonGymnasiumBridge(
         }
 
         // Write miscellaneous metrics
-        metricsHandler.logToSharedMemory(MetricsHandler.LANDING_RATE, landedInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_NO_LOC, rewardHandler.aircraftConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.MVA_CONFLICT_RATE, rewardHandler.mvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_NO_LOC, rewardHandler.wakeConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_LOC, rewardHandler.aircraftConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_LOC, rewardHandler.wakeConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.LANDING_RATE, landedInCurrentSession.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_NO_LOC, rewardHandler.aircraftConflictCountNoLoc.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.MVA_CONFLICT_RATE, rewardHandler.mvaConflictCount.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_NO_LOC, rewardHandler.wakeConflictCountNoLoc.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_LOC, rewardHandler.aircraftConflictCountLoc.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_LOC, rewardHandler.wakeConflictCountLoc.toFloat() / aircraftAdded)
         // Conflict rates before resolution
-        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_NO_LOC_BEFORE_RES, allAircraftConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_LOC_BEFORE_RES, allAircraftConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.MVA_CONFLICT_RATE_BEFORE_RES, allMvaConflictCount.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_NO_LOC_BEFORE_RES, allWakeConflictCountNoLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_LOC_BEFORE_RES, allWakeConflictCountLoc.toFloat() / AIRCRAFT_TO_SPAWN)
-        metricsHandler.logToSharedMemory(MetricsHandler.CLEARANCE_CHANGE_RATE, clearanceChangesInCurrentSession.toFloat() / AIRCRAFT_TO_SPAWN)
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_NO_LOC_BEFORE_RES, allAircraftConflictCountNoLoc.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.CONFLICT_RATE_LOC_BEFORE_RES, allAircraftConflictCountLoc.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.MVA_CONFLICT_RATE_BEFORE_RES, allMvaConflictCount.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_NO_LOC_BEFORE_RES, allWakeConflictCountNoLoc.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.WAKE_CONFLICT_RATE_LOC_BEFORE_RES, allWakeConflictCountLoc.toFloat() / aircraftAdded)
+        metricsHandler.logToSharedMemory(MetricsHandler.CLEARANCE_CHANGE_RATE, clearanceChangesInCurrentSession.toFloat() / aircraftAdded)
 
         // Copy all aircraft states
         sharedMemoryIPC.copyByteArray(constantSize + MAX_RL_AIRCRAFT * sizePerInstruction + additionalPadding, stateArray)

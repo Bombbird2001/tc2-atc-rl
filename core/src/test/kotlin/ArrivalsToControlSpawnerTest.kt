@@ -108,8 +108,11 @@ object ArrivalsToControlSpawnerTest : FunSpec() {
             val arrivals = emptyEntityArray()
             val spawner = ArrivalsToControlSpawner()
             val bridge = FakeBridge(AIRCRAFT_TO_SPAWN)
-            spawner.tickArrivalsToControl(1f, gs, bridge, stats, arrivals)
-            bridge.incrementCount shouldBe 0
+            repeat(AIRCRAFT_TO_SPAWN + 1) {
+                spawner.tickArrivalsToControl(1f, gs, bridge, stats, arrivals)
+                arptEntity[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = -1f
+            }
+            bridge.incrementCount shouldBe AIRCRAFT_TO_SPAWN
         }
 
         test("scripted spawn increments when episode cap reached (not blocked by cap)") {

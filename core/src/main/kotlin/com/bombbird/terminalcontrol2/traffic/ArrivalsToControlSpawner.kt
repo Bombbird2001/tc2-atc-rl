@@ -25,7 +25,6 @@ import kotlin.math.roundToInt
  * Either random STAR-based spawns (default) or a scripted schedule loaded from CSV.
  */
 class ArrivalsToControlSpawner {
-
     enum class Policy {
         /** Timer + [createRandomArrivalForAirport]; enforces episode spawn cap vs [AIRCRAFT_TO_SPAWN]. */
         RANDOM_RL,
@@ -39,10 +38,18 @@ class ArrivalsToControlSpawner {
     private var scriptedEntries: List<ScriptedSpawnEntry> = emptyList()
     private var scriptedNextIndex: Int = 0
     private var secondsSinceLastScriptedSpawn: Float = 0f
+    private var spawnedCount: Int = 0
     val doneSpawning: Boolean
         get() {
-            return policy == Policy.SCRIPTED && scriptedNextIndex >= scriptedEntries.size
+            return (policy == Policy.SCRIPTED && scriptedNextIndex >= scriptedEntries.size) || (policy == Policy.RANDOM_RL && spawnedCount >= AIRCRAFT_TO_SPAWN)
         }
+
+    fun reset() {
+        // Only resets the counter, will reuse the entries
+        scriptedNextIndex = 0
+        secondsSinceLastScriptedSpawn = 0f
+        spawnedCount = 0
+    }
 
     /**
      * Activates scripted mode with the given entries (e.g. from [loadScriptedSpawnEntriesFromCsvString]).
@@ -51,6 +58,7 @@ class ArrivalsToControlSpawner {
         scriptedEntries = entries
         scriptedNextIndex = 0
         secondsSinceLastScriptedSpawn = 0f
+        spawnedCount = 0
         policy = Policy.SCRIPTED
     }
 
@@ -62,21 +70,23 @@ class ArrivalsToControlSpawner {
     fun loadScheduleFromCsv(path: String) {
         val handle = Gdx.files.absolute(path)
         if (!handle.exists()) throw IllegalArgumentException("Spawn schedule file not found: $path")
-        val schedule = loadScriptedSpawnEntriesFromCsv(handle).subList(0, 5)
-        println("Loaded:\n${schedule.joinToString("\n")}")
+        val schedule = loadScriptedSpawnEntriesFromCsv(handle)
+//        println("Loaded:\n${schedule.joinToString("\n")}")
         loadScriptedSchedule(schedule)
     }
 
     /** Captures scripted spawn progress for RL rollback ([scriptedNextIndex], [secondsSinceLastScriptedSpawn] as whole seconds). */
     fun getStateForSnapshot(): SpawnHandlerSnapshotData = SpawnHandlerSnapshotData(
         scriptedNextIndex = scriptedNextIndex,
-        secondsSinceLastScriptedSpawn = secondsSinceLastScriptedSpawn.roundToInt()
+        secondsSinceLastScriptedSpawn = secondsSinceLastScriptedSpawn.roundToInt(),
+        spawnedCount = spawnedCount,
     )
 
     /** Restores scripted spawn progress after restoreSnapshot; does not change policy or [scriptedEntries]. */
     fun applyStateFromSnapshot(data: SpawnHandlerSnapshotData) {
         scriptedNextIndex = data.scriptedNextIndex
         secondsSinceLastScriptedSpawn = data.secondsSinceLastScriptedSpawn.toFloat()
+        spawnedCount = data.spawnedCount
     }
 
     /** Clears scripted schedule and returns to random RL spawning. */
@@ -84,6 +94,7 @@ class ArrivalsToControlSpawner {
         scriptedEntries = emptyList()
         scriptedNextIndex = 0
         secondsSinceLastScriptedSpawn = 0f
+        spawnedCount = 0
         policy = Policy.RANDOM_RL
     }
 
@@ -123,9 +134,10 @@ class ArrivalsToControlSpawner {
             val arrivalCount = countArrivalsForAirport(arrivalFamilyEntities, arptId)
             arptArrStats.arrivalSpawnTimer = SPAWN_INTERVAL_S
             if (arrivalCount >= arptArrStats.targetTrafficValue) continue
-            if (bridge.getEpisodeSpawnCount() >= AIRCRAFT_TO_SPAWN) continue
+            if (doneSpawning) continue
             createRandomArrivalForAirport(arptEntity, gs)
             bridge.incrementSpawnCount()
+            spawnedCount++
         }
     }
 
@@ -162,6 +174,7 @@ class ArrivalsToControlSpawner {
             disableAmendAltForNearbyTraffic = true
         )
         bridge.incrementSpawnCount()
+        spawnedCount++
         scriptedNextIndex++
         secondsSinceLastScriptedSpawn = 0f
     }

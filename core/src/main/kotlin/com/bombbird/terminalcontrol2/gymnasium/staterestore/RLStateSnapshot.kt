@@ -33,7 +33,8 @@ data class Snapshot(
 /** Snapshot of scripted spawn state for restore */
 data class SpawnHandlerSnapshotData(
     val scriptedNextIndex: Int,
-    val secondsSinceLastScriptedSpawn: Int
+    val secondsSinceLastScriptedSpawn: Int,
+    val spawnedCount: Int,
 )
 
 /** Snapshot of RewardHandler state for restore (prev LOC dist, prev alt, prev clearance, conflict counts). */

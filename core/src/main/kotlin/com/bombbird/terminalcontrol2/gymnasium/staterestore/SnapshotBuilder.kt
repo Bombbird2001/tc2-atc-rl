@@ -8,6 +8,7 @@ import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.WakeZone
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.networking.GameServer
+import com.bombbird.terminalcontrol2.systems.TrafficSystemInterval
 import ktx.ashley.get
 import ktx.ashley.has
 
@@ -25,10 +26,12 @@ fun buildSnapshot(gs: GameServer): Snapshot {
     }
     val runwayOccupied = buildRunwayOccupiedSet(gs)
     val arrivalSpawnTimers = buildArrivalSpawnTimers(gs)
+    val spawnHandlerState = gs.engine.getSystem(TrafficSystemInterval::class.java)?.arrivalsToControlSpawner?.getStateForSnapshot()
     return Snapshot(
         aircraft = aircraftMap,
         runwayOccupied = runwayOccupied,
-        arrivalSpawnTimers = arrivalSpawnTimers
+        arrivalSpawnTimers = arrivalSpawnTimers,
+        spawnHandlerState = spawnHandlerState
     )
 }
 
@@ -153,5 +156,6 @@ private fun buildAircraftSnapshotData(e: Entity): AircraftSnapshotData {
         hasDecelerateTo240kts = e.has(DecelerateTo240kts.mapper),
         hasAppDecelerateTo190kts = e.has(AppDecelerateTo190kts.mapper),
         hasDecelerateToAppSpd = e.has(DecelerateToAppSpd.mapper),
+        spawnGroup = e[SpawnGroup.mapper]!!.spawnGroup
     )
 }

@@ -13,6 +13,7 @@ import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.systems.AISystem
 import com.bombbird.terminalcontrol2.systems.FamilyWithListener
 import com.bombbird.terminalcontrol2.systems.TrafficSystemInterval
+import com.bombbird.terminalcontrol2.traffic.ArrivalsToControlSpawner
 import com.bombbird.terminalcontrol2.utilities.calculateMaxAcceleration
 import com.bombbird.terminalcontrol2.utilities.calculateTASFromIAS
 import com.bombbird.terminalcontrol2.utilities.ktToPxps
@@ -40,7 +41,7 @@ object AISystemTest: FunSpec() {
         FamilyWithListener.addAllServerFamilyEntityListeners()
         engine = getEngine(false)
         engine.addSystem(aiSystem)
-        engine.addSystem(TrafficSystemInterval())
+        engine.addSystem(TrafficSystemInterval(ArrivalsToControlSpawner()))
         engine.addEntity(entity)
 
         beforeEach {

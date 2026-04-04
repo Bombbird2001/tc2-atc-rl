@@ -152,7 +152,7 @@ fun createRandomArrivalForAirport(airport: Entity, gs: GameServer) {
 }
 
 /**
- * Creates a new arrival aircraft with the input data
+ * Creates a new arrival aircraft with the input data (random STAR / spawn position).
  * @param callsign the callsign of the aircraft
  * @param icaoType the ICAO aircraft type
  * @param airport the airport the arrival is flying into
@@ -175,6 +175,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     val spawnPos: Triple<Float, Float, Float>
 
     val useRandomSpawn = MathUtils.randomBoolean(gs.randomSpawnChance)
+    val spawnGroup: Byte
 
     if (useRandomSpawn) {
         val spawnDir = MathUtils.random(280f)
@@ -182,31 +183,91 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         val distNm = 39.5f
 
         val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
-        val randomTrackJitter = MathUtils.random(15) * MathUtils.randomSign()
+        val randomTrackJitter = 0f
         val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
-//        val spawnTrack = MathUtils.random(360f)
-//        val randomJitterX = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-//        val randomJitterY = MathUtils.random(nmToPx(10)) * MathUtils.randomSign()
-        val offsetX = 0 //-MathUtils.sinDeg(23f) * nmToPx(12.5f)
-        val offsetY = 0 //-MathUtils.cosDeg(23f) * nmToPx(12.5f)
+        val offsetX = 0f
+        val offsetY = 0f
         spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
+        spawnGroup = -1
     } else {
         spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
+        // Add spawn group for fairness tracking
+        spawnGroup = when (randomStar!!.name.substring(0, 5)) {
+            "TABUN", "SAUNA" -> SpawnGroup.SPAWN_WEST
+            "RAKTO", "UGABO" -> SpawnGroup.SPAWN_EAST
+            "GABAL", "ATALO" -> SpawnGroup.SPAWN_NORTH
+            "VEROP" -> SpawnGroup.SPAWN_SOUTH
+            else -> throw IllegalArgumentException("Invalid STAR: ${randomStar.name}")
+        }
     }
 
-    gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false).apply {
-        entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
-//        entity += ArrivalRouteZone().apply { starZone.addAll(getZonesForArrivalRoute(origStarRoute)) }
-        var alt = if (useRandomSpawn) {
-            MathUtils.random(13000f, 16000f)
-//            calculateArrivalSpawnAltitude(entity, airport, Route(), spawnPos.first, spawnPos.second, Route())
-        } else {
-            calculateArrivalSpawnAltitude(entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
+    gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false))
+    val ac = gs.aircraft.get(callsign)!!
+    ac.entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
+    val rawAlt = if (useRandomSpawn) {
+        MathUtils.random(13000f, 16000f)
+    } else {
+        calculateArrivalSpawnAltitude(ac.entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
+    }
+    finishArrivalEntitySetup(ac, airport, gs, spawnPos.first, spawnPos.second, spawnPos.third, rawAlt, spawnGroup, disableAmendAltForNearbyTraffic = false)
+}
+
+private val spawnGroupPos = arrayOf(
+    173.0f to 996.5f,
+    965.9704f to -287.3346f,
+    -823.157f to -577.0513f,
+    -823.157f to -577.0513f,
+    -31.541626f to -1009.12244f
+)
+private fun computeSpawnGroup(spawnX: Float, spawnY: Float): Byte {
+    return spawnGroupPos.map {
+        calculateDistanceBetweenPoints(spawnX, spawnY, it.first, it.second)
+    }.withIndex().minBy { it.value }.index.byte
+}
+
+/**
+ * Creates an arrival at an explicit position, altitude, and track (e.g. scripted schedule).
+ * @param disableAmendAltForNearbyTraffic when true, [altitudeFt] is used as-is; when false, [amendAltForNearbyTraffic] is applied (random-spawn behavior).
+ */
+fun createArrival(
+    callsign: String,
+    icaoType: String,
+    airport: Entity,
+    gs: GameServer,
+    xPx: Float,
+    yPx: Float,
+    altitudeFt: Float,
+    trackDeg: Float,
+    disableAmendAltForNearbyTraffic: Boolean = false
+) {
+    if (gs.aircraft.containsKey(callsign)) {
+        FileLog.info("TrafficTools", "Aircraft with callsign $callsign already exists")
+        return
+    }
+    val newAc = Aircraft(callsign, xPx, yPx, 0f, icaoType, FlightType.ARRIVAL, false)
+    gs.aircraft.put(callsign, newAc)
+    newAc.entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
+    finishArrivalEntitySetup(newAc, airport, gs, xPx, yPx, trackDeg + 180, altitudeFt, computeSpawnGroup(xPx, yPx), disableAmendAltForNearbyTraffic)
+}
+
+private fun finishArrivalEntitySetup(
+    ac: Aircraft,
+    airport: Entity,
+    gs: GameServer,
+    xPx: Float,
+    yPx: Float,
+    oppTrackDeg: Float,
+    rawAltitudeFt: Float,
+    spawnGroup: Byte,
+    disableAmendAltForNearbyTraffic: Boolean
+) {
+    ac.entity.also { entity ->
+        var alt = rawAltitudeFt
+        if (!disableAmendAltForNearbyTraffic) {
+            alt = amendAltForNearbyTraffic(alt, xPx, yPx, entity)
         }
-//        var alt = MathUtils.random(3000f, MAX_ALT.toFloat())
-        alt = amendAltForNearbyTraffic(alt, spawnPos.first, spawnPos.second, entity)
         entity[Altitude.mapper]?.altitudeFt = alt
-        val dir = (entity[Direction.mapper] ?: Direction()).apply { trackUnitVector.rotateDeg(-spawnPos.third - 180) }
+        val dir = (entity[Direction.mapper] ?: Direction()).apply { trackUnitVector.rotateDeg(-oppTrackDeg - 180) }
         val aircraftPerf = entity[AircraftInfo.mapper]?.aircraftPerf ?: AircraftTypeData.AircraftPerfData()
 //        val ias = calculateArrivalSpawnIAS(origStarRoute, starRoute, alt, aircraftPerf)
         val ias: Short = 240
@@ -222,7 +283,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
             val minVertSpd = calculateMinVerticalSpd(aircraftPerf, alt, tas, 0f, approachExpedite = false, takingOff = false, takeoffGoAround = false)
             vertSpdFpm = max(minVertSpd, (cmdTargetAlt - alt) * 6)
         }
-        val affectedByWind = (entity[AffectedByWind.mapper] ?: AffectedByWind()).apply { getInterpolatedWindVector(spawnPos.first, spawnPos.second) }
+        val affectedByWind = (entity[AffectedByWind.mapper] ?: AffectedByWind()).apply { getInterpolatedWindVector(xPx, yPx) }
         entity[GroundTrack.mapper]?.apply {
             val tasVector = dir.trackUnitVector * ktToPxps(speed.speedKts.toInt())
             trackVectorPxps = tasVector + affectedByWind.windVectorPxps
@@ -234,7 +295,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         entity[CommandTarget.mapper]?.apply {
             targetAltFt = cmdTargetAlt
             targetIasKt = ias
-            targetHdgDeg = modulateHeading(spawnPos.third + 180 + MAG_HDG_DEV)
+            targetHdgDeg = modulateHeading(oppTrackDeg + 180 + MAG_HDG_DEV)
         }
         val spds = getMinMaxOptimalIAS(entity)
         clearanceAct.actingClearance.clearanceState.apply {
@@ -246,8 +307,9 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         if (alt > 10000) entity += DecelerateTo240kts()
         entity += ContactFromCentre(MAX_ALT + MathUtils.random(400, 1500))
         initialiseArrivalRequests(entity)
-        gs.sendAircraftSpawn(this)
-    })
+        entity += SpawnGroup(spawnGroup)
+    }
+    gs.sendAircraftSpawn(ac)
 }
 
 /**

@@ -5,7 +5,7 @@ import com.bombbird.terminalcontrol2.networking.GameServer
 import ktx.collections.GdxArrayMap
 
 interface GymnasiumBridge {
-    fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, gs: GameServer, resetAircraft: () -> GdxArrayMap<String, Aircraft>)
+    fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, gs: GameServer)
 
     fun getEpisodeSpawnCount(): Int
 
@@ -14,7 +14,7 @@ interface GymnasiumBridge {
 
 
 object StubGymnasiumBridge: GymnasiumBridge {
-    override fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, gs: GameServer, resetAircraft: () -> GdxArrayMap<String, Aircraft>) {}
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, stopServer: () -> Unit, gs: GameServer) {}
 
     override fun getEpisodeSpawnCount(): Int = 0
 

@@ -5,7 +5,6 @@ import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
-import com.badlogic.gdx.utils.ArrayMap
 import com.badlogic.gdx.utils.Pool
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.TrajectoryPoint
@@ -512,50 +511,44 @@ class TrajectoryManager {
     private fun checkNewAltitudeClearOfConflict(aircraft: Entity, newAltitude: Int,
                                                 allTrajectoryPoints: Array<Array<GdxArray<TrajectoryPoint>>>): Boolean {
         val traj = calculateTrajectory(aircraft, newAltitude)
-        var conflictFound = false
-        for (i in 0 until traj.size) {
-            val point = traj[i]
-            val alt = point.entity[Altitude.mapper]?.altitudeFt ?: continue
-            val altLevel = getSectorIndexForAlt(alt, getConflictStartAltitude())
-            val allPointsInCurrentTimePoint = allTrajectoryPoints[i]
-            // Check with all points in current layer
-            for (j in 0 until allPointsInCurrentTimePoint[altLevel].size) {
-                val entry = checkTrajectoryPointConflict(point, allPointsInCurrentTimePoint[altLevel][j])
-                if (entry != null) {
-                    // Conflict exists
-                    conflictFound = true
-                    break
+        try {
+            for (i in 0 until traj.size) {
+                val point = traj[i]
+                val alt = point.entity[Altitude.mapper]?.altitudeFt ?: continue
+                val altLevel = getSectorIndexForAlt(alt, getConflictStartAltitude())
+                val allPointsInCurrentTimePoint = allTrajectoryPoints[i]
+                // Check with all points in current layer
+                for (j in 0 until allPointsInCurrentTimePoint[altLevel].size) {
+                    val entry = checkTrajectoryPointConflict(point, allPointsInCurrentTimePoint[altLevel][j])
+                    if (entry != null) {
+                        return false
+                    }
                 }
-            }
-            // If a layer exists above, check with each point in the above layer
-            if (altLevel + 1 < allPointsInCurrentTimePoint.size) {
-                val abovePoints = allPointsInCurrentTimePoint[altLevel + 1]
-                for (k in 0 until abovePoints.size) {
-                    val entry2 = checkTrajectoryPointConflict(point, abovePoints[k])
-                    if (entry2 != null) {
-                        // Conflict exists
-                        conflictFound = true
-                        break
+                // If a layer exists above, check with each point in the above layer
+                if (altLevel + 1 < allPointsInCurrentTimePoint.size) {
+                    val abovePoints = allPointsInCurrentTimePoint[altLevel + 1]
+                    for (k in 0 until abovePoints.size) {
+                        val entry2 = checkTrajectoryPointConflict(point, abovePoints[k])
+                        if (entry2 != null) {
+                            return false
+                        }
+                    }
+                }
+                // If a layer exists below, check with each point in the below layer
+                if (altLevel - 1 >= 0) {
+                    val belowPoints = allPointsInCurrentTimePoint[altLevel - 1]
+                    for (k in 0 until belowPoints.size) {
+                        val entry2 = checkTrajectoryPointConflict(point, belowPoints[k])
+                        if (entry2 != null) {
+                            return false
+                        }
                     }
                 }
             }
-            // If a layer exists below, check with each point in the below layer
-            if (altLevel - 1 >= 0) {
-                val belowPoints = allPointsInCurrentTimePoint[altLevel - 1]
-                for (k in 0 until belowPoints.size) {
-                    val entry2 = checkTrajectoryPointConflict(point, belowPoints[k])
-                    if (entry2 != null) {
-                        // Conflict exists
-                        conflictFound = true
-                        break
-                    }
-                }
-            }
+            return true
+        } finally {
+            freePooledTrajectoryPoints(traj)
         }
-
-        freePooledTrajectoryPoints(traj)
-
-        return !conflictFound
     }
 
     /**

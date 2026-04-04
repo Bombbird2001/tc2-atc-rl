@@ -138,6 +138,7 @@ fun loadAllComponents() {
     STARChildren.initialise()
     SectorInfo.initialise()
     ShouldInitiateGoAround.initialise()
+    SpawnGroup.initialise()
     Speed.initialise()
     StepDown.initialise()
     StepDownApproach.initialise()

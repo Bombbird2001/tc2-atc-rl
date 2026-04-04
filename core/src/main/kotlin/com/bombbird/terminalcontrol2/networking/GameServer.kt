@@ -41,6 +41,37 @@ import kotlin.concurrent.withLock
 import kotlin.math.min
 
 /**
+ * Headless ATC-RL training parameters (everything except [GameServer.newRLGameServer] `airportToHost`).
+ * Add new RL launch flags here so callers pass a single [copy]-friendly object.
+ */
+data class RLHeadlessTrainingConfig(
+    val envId: String,
+    val evalMode: Boolean,
+    val goalReward: Float,
+    val mvaConflictPenalty: Float,
+    val aircraftConflictPenalty: Float,
+    val wakeConflictPenalty: Float,
+    val randomSpawnChance: Float,
+    /** Absolute path to scripted spawn CSV, or null/blank for random RL spawning only. */
+    val scriptedSpawnFile: String? = null,
+    /** Absolute output CSV path/dir for conflict-resolution debug snapshots; null/blank disables. */
+    val debugSnapshotCsvPath: String? = null,
+)
+
+/** Defaults when [GameServer] is not started with explicit RL training settings (multiplayer, tests, etc.). */
+internal val DEFAULT_RL_HEADLESS_TRAINING_CONFIG = RLHeadlessTrainingConfig(
+    envId = "0",
+    evalMode = false,
+    goalReward = 1f,
+    mvaConflictPenalty = 0f,
+    aircraftConflictPenalty = 0f,
+    wakeConflictPenalty = 0f,
+    randomSpawnChance = 0f,
+    scriptedSpawnFile = null,
+    debugSnapshotCsvPath = null,
+)
+
+/**
  * Main game server class, responsible for handling all game logic, updates, sending required game data information to
  * clients and handling incoming client inputs
  * @param airportToHost name of the airport to host
@@ -51,11 +82,17 @@ import kotlin.math.min
  */
 class GameServer private constructor(
     airportToHost: String, saveId: Int?, val publicServer: Boolean, private val maxPlayersSet: Byte,
-    testMode: Boolean = false, envId: String = "0", private val isHeadlessTraining: Boolean = false,
-    private val slowMode: Boolean = false, val evalMode: Boolean = false, goalReward: Float = 1f,
-    mvaConflictPenalty: Float = 0f, aircraftConflictPenalty: Float = 0f, wakeConflictPenalty: Float = 0f,
-    val randomSpawnChance: Float = 0f
+    testMode: Boolean = false, private val isHeadlessTraining: Boolean = false,
+    private val slowMode: Boolean = false,
+    rlHeadlessTrainingConfigParam: RLHeadlessTrainingConfig? = null,
 ) {
+    /** RL / bridge / reward / traffic spawn parameters; use [DEFAULT_RL_HEADLESS_TRAINING_CONFIG] when null. */
+    val rlHeadlessTrainingConfig: RLHeadlessTrainingConfig =
+        rlHeadlessTrainingConfigParam ?: DEFAULT_RL_HEADLESS_TRAINING_CONFIG
+
+    val evalMode: Boolean get() = rlHeadlessTrainingConfig.evalMode
+    val randomSpawnChance: Float get() = rlHeadlessTrainingConfig.randomSpawnChance
+
     companion object {
         const val UPDATE_INTERVAL = 1000.0 / SERVER_UPDATE_RATE
         const val SERVER_TO_CLIENT_UPDATE_INTERVAL_FAST = 1000.0 / SERVER_TO_CLIENT_UPDATE_RATE_FAST
@@ -76,16 +113,13 @@ class GameServer private constructor(
         const val STORMS_NIGHTMARE: Byte = 11
 
         /** Creates a new single-player mode game server object for ATC-RL headless training */
-        fun newRLGameServer(
-            airportToHost: String, envId: String, evalMode: Boolean, goalReward: Float,
-            mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float,
-            randomSpawnChance: Float
-        ): GameServer {
+        fun newRLGameServer(airportToHost: String, config: RLHeadlessTrainingConfig): GameServer {
             return GameServer(
-                airportToHost, null, false, 1, envId = envId, isHeadlessTraining = true,
-                slowMode = false, evalMode = evalMode, goalReward = goalReward, mvaConflictPenalty = mvaConflictPenalty,
-                aircraftConflictPenalty = aircraftConflictPenalty, wakeConflictPenalty = wakeConflictPenalty,
-                randomSpawnChance = randomSpawnChance
+                airportToHost, null, false, 1,
+                isHeadlessTraining = true,
+                rlHeadlessTrainingConfigParam = config.copy(
+                    scriptedSpawnFile = config.scriptedSpawnFile?.takeIf { it.isNotBlank() }
+                ),
             )
         }
 
@@ -95,9 +129,17 @@ class GameServer private constructor(
          */
         fun newSinglePlayerGameServer(airportToHost: String): GameServer {
             return GameServer(
-                airportToHost, null, false, 1, envId = "0", slowMode = true,
-                evalMode = true, goalReward = EVAL_GOAL_REWARD, mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
-                aircraftConflictPenalty = EVAL_AIRCRAFT_CONFLICT_PENALTY, wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY
+                airportToHost, null, false, 1, slowMode = true,
+                rlHeadlessTrainingConfigParam = RLHeadlessTrainingConfig(
+                    envId = "0_fbc099",
+                    evalMode = true,
+                    goalReward = EVAL_GOAL_REWARD,
+                    mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
+                    aircraftConflictPenalty = EVAL_AIRCRAFT_CONFLICT_PENALTY,
+                    wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY,
+                    randomSpawnChance = 0f,
+                    scriptedSpawnFile = "/Users/bombbird2001/Desktop/tc2-atc-rl/scripted-flights/feb_1.csv",
+                ),
             )
         }
 
@@ -272,15 +314,26 @@ class GameServer private constructor(
     // var frames = 0
     private var startTime = -1L
 //    val pythonGymBridge: GymnasiumBridge
-
+    private val envName = "env[${rlHeadlessTrainingConfig.envId}]"
     val baselineAI: Agent
 
     // Loading screen callbacks
     var serverStartedCallback: (() -> Unit)? = null
 
     init {
+        FileLog.info("$envName GameServer",
+            "Initialised with slowMode=$slowMode, evalMode=${rlHeadlessTrainingConfig.evalMode}, goalReward=${rlHeadlessTrainingConfig.goalReward}," +
+                    " mvaPenalty=${rlHeadlessTrainingConfig.mvaConflictPenalty}, aircraftConflictPenalty=${rlHeadlessTrainingConfig.aircraftConflictPenalty}," +
+                    " wakePenalty=${rlHeadlessTrainingConfig.wakeConflictPenalty}, randomSpawnChance=${rlHeadlessTrainingConfig.randomSpawnChance}," +
+                    " scriptedSpawnFile=${rlHeadlessTrainingConfig.scriptedSpawnFile ?: "(none)"}"
+        )
+
         if (!testMode) {
-            val tfcSystemInterval = TrafficSystemInterval()
+            val arrivalsToControlSpawner = ArrivalsToControlSpawner()
+            rlHeadlessTrainingConfig.scriptedSpawnFile?.takeIf { it.isNotBlank() }?.let {
+                arrivalsToControlSpawner.loadScheduleFromCsv(it)
+            }
+            val tfcSystemInterval = TrafficSystemInterval(arrivalsToControlSpawner)
             val trajSystemInterval = TrajectorySystemInterval()
             baselineAI = HoldAndDispatch(
                 this, tfcSystemInterval.conflictManager, goalReward,
@@ -288,8 +341,10 @@ class GameServer private constructor(
             )
             CsvWriter.setRunDirectory(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")))
 //            pythonGymBridge = PythonGymnasiumBridge(
-//                envId, tfcSystemInterval.conflictManager, trajSystemInterval, rewardEval,
-//                goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
+//                rlHeadlessTrainingConfig,
+//                tfcSystemInterval.conflictManager,
+//                trajSystemInterval,
+//                arrivalsToControlSpawner,
 //            )
             initiateServer(airportToHost, saveId, tfcSystemInterval, trajSystemInterval)
         } else {
@@ -312,7 +367,7 @@ class GameServer private constructor(
         engine.addSystem(AISystemInterval())
         engine.addSystem(ControlStateSystem())
         engine.addSystem(ControlStateSystemInterval())
-        engine.addSystem(TrafficSystemInterval())
+        engine.addSystem(TrafficSystemInterval(ArrivalsToControlSpawner()))
         engine.addSystem(DataSystem())
 
         sectors.put(0, GdxArray())
@@ -777,22 +832,7 @@ class GameServer private constructor(
             airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
         }
 
-//        pythonGymBridge.update(aircraft, this::stopServer) {
-//            // Reset function - despawn current aircraft, create new aircraft
-//            for (i in aircraft.size - 1 downTo 0) {
-//                val ac = aircraft.getValueAt(i)
-//                despawnAircraft(ac.entity)
-//            }
-//            aircraft.clear()
-//
-//            val airport = airports.getValueAt(0).entity
-//
-//            // Force spawn 1 aircraft on start
-//            createRandomArrivalForAirport(airport, this)
-//            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
-//
-//            return@update aircraft
-//        }
+//        pythonGymBridge.update(aircraft, this::stopServer, this)
     }
 
     /**

@@ -19,6 +19,7 @@ import com.bombbird.terminalcontrol2.gymnasium.staterestore.RewardHandlerSnapsho
 import com.bombbird.terminalcontrol2.gymnasium.staterestore.copyClearanceState
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.distPxFromLoc
+import com.bombbird.terminalcontrol2.networking.RLHeadlessTrainingConfig
 import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
 import com.bombbird.terminalcontrol2.traffic.conflict.PotentialConflict
@@ -31,8 +32,8 @@ import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 
 class RewardHandler(
-    private val conflictManager: ConflictManager, private val eval: Boolean, private val goalReward: Float,
-    private val mvaConflictPenalty: Float, private val aircraftConflictPenalty: Float, private val wakeConflictPenalty: Float
+    private val conflictManager: ConflictManager,
+    private val rlConfig: RLHeadlessTrainingConfig,
 ) {
     companion object {
         val EMPTY_POTENTIAL_CONFLICTS = GdxArray<PotentialConflict>(1)
@@ -98,7 +99,7 @@ class RewardHandler(
     fun rewardStep(aircraft: Array<Entity?>, aircraftMap: GdxArrayMap<String, Aircraft>, conflicts: GdxArray<Conflict>): Array<Float?> {
         if (aircraft.size != MAX_RL_AIRCRAFT) throw IllegalStateException("Expected $MAX_RL_AIRCRAFT but found ${aircraft.size}")
 
-        if (eval) GAME.gameServer?.sendConflicts(conflicts, EMPTY_POTENTIAL_CONFLICTS)
+        if (rlConfig.evalMode) GAME.gameServer?.sendConflicts(conflicts, EMPTY_POTENTIAL_CONFLICTS)
 
         val rewards = Array<Float?>(MAX_RL_AIRCRAFT) { null }
 
@@ -128,11 +129,11 @@ class RewardHandler(
 
             if (!aircraftMap.containsKey(currAcInfo.icaoCallsign)) {
                 // Lump sum reward on landing
-                acReward += goalReward
+                acReward += rlConfig.goalReward
             }
 
             // Reward from previous action
-            if (!eval) {
+            if (!rlConfig.evalMode) {
                 // Decrease in distance towards LOC line segment (x4 penalty if distance increases)
                 // + decrease in altitude (x4 penalty if altitude increases)
                 val newLocDistPx = distPxFromLoc(currPos, targetApproach.value.entity, 6)
@@ -172,7 +173,7 @@ class RewardHandler(
             // 1 @>=200 knots, 1.5 @<=150 knots
             // 1.1 @0 feet, 1@10000 feet, 0.8@>=30000 feet
             val iasMult = MathUtils.clamp((300 - currIas.iasKt) / 100f, 1f, 1.5f)
-            val altMult = 1  // MathUtils.clamp(1 + (10000 - currAlt.altitudeFt) / 10000, 0.8f, 1f)
+            val altMult = MathUtils.clamp(1 + (10000 - currAlt.altitudeFt) / 10000, 0.8f, 1f)
             // Constant factor of 1 for time + fuel consumption factor
             val multiplier = 1 + iasMult * altMult
             acReward -= PER_STEP_PENALTY * multiplier
@@ -185,18 +186,18 @@ class RewardHandler(
                 if (conflict.entity2 != null) {
                     if (conflict.reason == Conflict.RL_AIRCRAFT_CONFLICT_INCREASED_MARGIN) {
                         // Use stricter rules for calculating rewards
-                        acReward -= aircraftConflictPenalty
+                        acReward -= rlConfig.aircraftConflictPenalty
                     } else {
                         // But the actual rules when evaluating conflict rate
-                        if (ac1Loc && ac2Loc) aircraftConflictCountNoLoc++ else aircraftConflictCountNoLoc++
+                        if (ac1Loc && ac2Loc) aircraftConflictCountLoc++ else aircraftConflictCountNoLoc++
                     }
                 } else {
                     if (conflict.reason == Conflict.WAKE_INFRINGE) {
                         if (ac1Loc) wakeConflictCountLoc++ else wakeConflictCountNoLoc++
                     } else if (conflict.reason == Conflict.RL_WAKE_CONFLICT_INCREASED_MARGIN) {
-                        acReward -= wakeConflictPenalty
+                        acReward -= rlConfig.wakeConflictPenalty
                     } else {
-                        acReward -= mvaConflictPenalty
+                        acReward -= rlConfig.mvaConflictPenalty
                         mvaConflictCount++
                     }
                 }

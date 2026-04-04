@@ -325,3 +325,17 @@ class AirportArrivalStats(var targetTrafficValue: Int = 6, var arrivalSpawnTimer
         fun initialise() = InitializeCompanionObjectOnStart.initialise(this::class)
     }
 }
+
+/** Component for storing the spawn location grouping of the aircraft */
+data class SpawnGroup(var spawnGroup: Byte): Component {
+    companion object {
+        val mapper = object: Mapper<SpawnGroup>() {}.mapper
+
+        fun initialise() = InitializeCompanionObjectOnStart.initialise(this::class)
+
+        const val SPAWN_NORTH: Byte = 0
+        const val SPAWN_EAST: Byte = 1
+        const val SPAWN_WEST: Byte = 2
+        const val SPAWN_SOUTH: Byte = 4
+    }
+}

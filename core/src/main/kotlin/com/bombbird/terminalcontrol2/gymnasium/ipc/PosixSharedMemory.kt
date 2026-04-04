@@ -15,16 +15,28 @@ class PosixSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
 
     private val buffer: ByteBuffer
 
-    val trainerInitialized = MacOSLibC.sem_open("${SharedMemoryIPC.TRAINER_INITIALIZED}$envId",O_RDWR)
-    val resetSim = PosixLibC.sem_open("${SharedMemoryIPC.RESET_PREFIX}$envId", O_RDWR)
-    val actionReady = PosixLibC.sem_open("${SharedMemoryIPC.ACTION_READY_PREFIX}$envId", O_RDWR)
-    val actionDone = PosixLibC.sem_open("${SharedMemoryIPC.ACTION_DONE_PREFIX}$envId", O_RDWR)
-    val resetAfterStep = PosixLibC.sem_open("${SharedMemoryIPC.RESET_AFTER_STEP_PREFIX}$envId", O_RDWR)
+    val trainerInitializedName = "${SharedMemoryIPC.TRAINER_INITIALIZED}$envId"
+    val resetSimName = "${SharedMemoryIPC.RESET_PREFIX}$envId"
+    val actionReadyName = "${SharedMemoryIPC.ACTION_READY_PREFIX}$envId"
+    val actionDoneName = "${SharedMemoryIPC.ACTION_DONE_PREFIX}$envId"
+    val resetAfterStepName = "${SharedMemoryIPC.RESET_AFTER_STEP_PREFIX}$envId"
+
+    val trainerInitialized = PosixLibC.sem_open(trainerInitializedName, O_RDWR)
+    val resetSim = PosixLibC.sem_open(resetSimName, O_RDWR)
+    val actionReady = PosixLibC.sem_open(actionReadyName, O_RDWR)
+    val actionDone = PosixLibC.sem_open(actionDoneName, O_RDWR)
+    val resetAfterStep = PosixLibC.sem_open(resetAfterStepName, O_RDWR)
 
     private val fd = PosixLibC.shm_open("${SharedMemoryIPC.SHM_FILE_PREFIX}$envId", O_RDWR, "666".toInt(8))
     private val ptr: Pointer
 
     init {
+        PosixLibC.sem_unlink(trainerInitializedName)
+        PosixLibC.sem_unlink(resetSimName)
+        PosixLibC.sem_unlink(actionDoneName)
+        PosixLibC.sem_unlink(actionReadyName)
+        PosixLibC.sem_unlink(resetAfterStepName)
+
         if (fd < 0) throw NullPointerException("Unable to read shared memory file")
 
         ptr = PosixLibC.mmap(null, fileSizeBytes, PROT_READ or PROT_WRITE, MAP_SHARED, fd, 0)
@@ -37,7 +49,7 @@ class PosixSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
     override fun waitForTrainerInitialized() {
         var res = -1
         while (res != 0) {
-            res = MacOSLibC.sem_wait(trainerInitialized)
+            res = PosixLibC.sem_wait(trainerInitialized)
         }
     }
 

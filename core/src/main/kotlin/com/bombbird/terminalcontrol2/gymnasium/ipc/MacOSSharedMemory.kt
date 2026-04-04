@@ -15,16 +15,28 @@ class MacOSSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
 
     private val buffer: ByteBuffer
 
-    val trainerInitialized = MacOSLibC.sem_open("${SharedMemoryIPC.TRAINER_INITIALIZED}$envId", O_RDWR)
-    val resetSim = MacOSLibC.sem_open("${SharedMemoryIPC.RESET_PREFIX}$envId", O_RDWR)
-    val actionReady = MacOSLibC.sem_open("${SharedMemoryIPC.ACTION_READY_PREFIX}$envId", O_RDWR)
-    val actionDone = MacOSLibC.sem_open("${SharedMemoryIPC.ACTION_DONE_PREFIX}$envId", O_RDWR)
-    val resetAfterStep = MacOSLibC.sem_open("${SharedMemoryIPC.RESET_AFTER_STEP_PREFIX}$envId", O_RDWR)
+    val trainerInitializedName = "${SharedMemoryIPC.TRAINER_INITIALIZED}$envId"
+    val resetSimName = "${SharedMemoryIPC.RESET_PREFIX}$envId"
+    val actionReadyName = "${SharedMemoryIPC.ACTION_READY_PREFIX}$envId"
+    val actionDoneName = "${SharedMemoryIPC.ACTION_DONE_PREFIX}$envId"
+    val resetAfterStepName = "${SharedMemoryIPC.RESET_AFTER_STEP_PREFIX}$envId"
+
+    val trainerInitialized = MacOSLibC.sem_open(trainerInitializedName, O_RDWR)
+    val resetSim = MacOSLibC.sem_open(resetSimName, O_RDWR)
+    val actionReady = MacOSLibC.sem_open(actionReadyName, O_RDWR)
+    val actionDone = MacOSLibC.sem_open(actionDoneName, O_RDWR)
+    val resetAfterStep = MacOSLibC.sem_open(resetAfterStepName, O_RDWR)
 
     private val fd: Int = MacOSLibC.shm_open("${SharedMemoryIPC.SHM_FILE_PREFIX}$envId", O_RDWR, "666".toInt(8))
     private val ptr: Pointer
 
     init {
+        MacOSLibC.sem_unlink(trainerInitializedName)
+        MacOSLibC.sem_unlink(resetSimName)
+        MacOSLibC.sem_unlink(actionDoneName)
+        MacOSLibC.sem_unlink(actionReadyName)
+        MacOSLibC.sem_unlink(resetAfterStepName)
+
         if (fd < 0) throw NullPointerException("Unable to read shared memory file")
 
         ptr = MacOSLibC.mmap(null, fileSizeBytes, PROT_READ or PROT_WRITE, MAP_SHARED, fd, 0)

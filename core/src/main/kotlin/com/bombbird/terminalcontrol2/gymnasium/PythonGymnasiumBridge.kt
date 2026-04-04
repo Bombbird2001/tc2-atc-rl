@@ -214,7 +214,7 @@ class PythonGymnasiumBridge(
 
         // Check for reset sim event
         if (sharedMemoryIPC.needsResetSim()) {
-//            FileLog.info("$envName PythonGymnasiumBridge", "Resetting state")
+//            FileLog.info("$envName PythonGymnasiumBridge", "Resetting state at step $internalStep")
             resetNeeded = false
 
 //            if (landedInCurrentSession != AIRCRAFT_TO_SPAWN && landedInCurrentSession > 0) {
@@ -324,7 +324,7 @@ class PythonGymnasiumBridge(
                 val ac2Loc = conflict.entity2?.has(LocalizerCaptured.mapper) ?: false
 
                 if (conflict.entity2 != null) {
-                    if (ac1Loc && ac2Loc) allAircraftConflictCountLoc++ else allAircraftConflictCountNoLoc++
+                    if (ac1Loc && ac2Loc) allAircraftConflictCountLoc += 2 else allAircraftConflictCountNoLoc += 2
                 } else if (conflict.reason == Conflict.WAKE_INFRINGE) {
                     if (ac1Loc) allWakeConflictCountLoc++ else allWakeConflictCountNoLoc++
                 } else if (conflict.reason in arrayOf(Conflict.MVA, Conflict.SID_STAR_MVA, Conflict.RESTRICTED)) {
@@ -399,7 +399,7 @@ class PythonGymnasiumBridge(
 //            println("${System.currentTimeMillis()} Set action ready")
 
             if (sharedMemoryIPC.needsResetAfterStep() || terminating) {
-//                println("$envName Reset requested after step: terminating is $terminating")
+//                println("$envName Reset requested after step $internalStep: terminating is $terminating")
                 // Reset requested, exit update so won't get blocked
                 resetNeeded = true
                 terminating = false

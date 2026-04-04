@@ -119,12 +119,12 @@ class ArrivalsToControlSpawner {
         interval: Float,
         gs: GameServer,
         bridge: GymnasiumBridge,
-        airportArrivalStats: ImmutableArray<Entity>,
+        airports: ImmutableArray<Entity>,
         arrivalFamilyEntities: ImmutableArray<Entity>
     ) {
         when (policy) {
-            Policy.RANDOM_RL -> tickRandomRl(interval, gs, bridge, airportArrivalStats, arrivalFamilyEntities)
-            Policy.SCRIPTED -> tickScripted(interval, gs, bridge, airportArrivalStats, arrivalFamilyEntities)
+            Policy.RANDOM_RL -> tickRandomRl(interval, gs, bridge, airports, arrivalFamilyEntities)
+            Policy.SCRIPTED -> tickScripted(interval, gs, bridge, airports)
         }
     }
 
@@ -132,11 +132,11 @@ class ArrivalsToControlSpawner {
         interval: Float,
         gs: GameServer,
         bridge: GymnasiumBridge,
-        airportArrivalStats: ImmutableArray<Entity>,
+        airports: ImmutableArray<Entity>,
         arrivalFamilyEntities: ImmutableArray<Entity>
     ) {
-        for (i in 0 until airportArrivalStats.size()) {
-            val arptEntity = airportArrivalStats[i]
+        for (i in 0 until airports.size()) {
+            val arptEntity = airports[i]
             val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
             arptArrStats.targetTrafficValue = MAX_AIRCRAFT_ON_MAP
             arptArrStats.arrivalSpawnTimer -= interval
@@ -158,18 +158,11 @@ class ArrivalsToControlSpawner {
         interval: Float,
         gs: GameServer,
         bridge: GymnasiumBridge,
-        airportArrivalStats: ImmutableArray<Entity>,
-        arrivalFamilyEntities: ImmutableArray<Entity>
+        airports: ImmutableArray<Entity>,
     ) {
         if (doneSpawning) return
 
-        val arptEntity = findAirportEntityWithId(airportArrivalStats, 0) ?: return
-        val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: return
-        arptArrStats.targetTrafficValue = MAX_AIRCRAFT_ON_MAP
-
-        val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: return
-        val arrivalCount = countArrivalsForAirport(arrivalFamilyEntities, arptId)
-        if (arrivalCount >= arptArrStats.targetTrafficValue) return
+        val arptEntity = findAirportEntityWithId(airports, 0) ?: return
 
         secondsSinceLastScriptedSpawn += interval
         val entry = scriptedEntries[scriptedNextIndex]

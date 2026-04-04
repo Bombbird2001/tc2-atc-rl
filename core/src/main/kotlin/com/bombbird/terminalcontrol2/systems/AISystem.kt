@@ -1180,9 +1180,11 @@ class AISystem: EntitySystem() {
            (get(0) as? Route.WaypointLeg)?.let { prevWpt ->
                 lastWpt = prevWpt
                 entity[LastRestrictions.mapper]?.let { restr ->
-                    prevWpt.maxSpdKt?.let { maxSpd -> restr.maxSpdKt = maxSpd }
-                    prevWpt.minAltFt?.let { minAltFt -> restr.minAltFt = minAltFt }
-                    prevWpt.maxAltFt?.let { maxAltFt -> restr.maxAltFt = maxAltFt }
+                    if (prevWpt.spdRestrActive) prevWpt.maxSpdKt?.let { maxSpd -> restr.maxSpdKt = maxSpd }
+                    if (prevWpt.altRestrActive) {
+                        prevWpt.minAltFt?.let { minAltFt -> restr.minAltFt = minAltFt }
+                        prevWpt.maxAltFt?.let { maxAltFt -> restr.maxAltFt = maxAltFt }
+                    }
                 }
             }
             removeIndex(0)

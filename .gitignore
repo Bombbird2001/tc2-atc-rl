@@ -78,3 +78,5 @@ nb-configuration.xml
 
 extJars/
 scripted-flights/
+runs/
+.cursor/

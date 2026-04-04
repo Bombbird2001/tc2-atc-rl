@@ -234,3 +234,5 @@ const val RL_HORIZONTAL_SEP_MINIMA_MULT = 1.15f
 const val RL_WAKE_SEP_MINIMA_MARGIN = 0.8f
 const val MAX_SPAWN_DIST_NM = 60
 const val MIN_SPAWN_DIST_NM = 5
+
+const val BASELINE_INITIAL_SPD: Short = 240

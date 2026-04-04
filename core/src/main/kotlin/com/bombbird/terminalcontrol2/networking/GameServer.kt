@@ -131,7 +131,7 @@ class GameServer private constructor(
             return GameServer(
                 airportToHost, null, false, 1, slowMode = true,
                 rlHeadlessTrainingConfigParam = RLHeadlessTrainingConfig(
-                    envId = "0_fbc099",
+                    envId = "0",
                     evalMode = true,
                     goalReward = EVAL_GOAL_REWARD,
                     mvaConflictPenalty = EVAL_MVA_CONFLICT_PENALTY,
@@ -139,6 +139,7 @@ class GameServer private constructor(
                     wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY,
                     randomSpawnChance = 0f,
                     scriptedSpawnFile = "/Users/bombbird2001/Desktop/tc2-atc-rl/scripted-flights/feb_1.csv",
+                    debugSnapshotCsvPath = "/Users/bombbird2001/Desktop/tc2-atc-rl/runs/${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}",
                 ),
             )
         }
@@ -321,7 +322,8 @@ class GameServer private constructor(
     var serverStartedCallback: (() -> Unit)? = null
 
     init {
-        FileLog.info("$envName GameServer",
+        FileLog.info(
+            "$envName GameServer",
             "Initialised with slowMode=$slowMode, evalMode=${rlHeadlessTrainingConfig.evalMode}, goalReward=${rlHeadlessTrainingConfig.goalReward}," +
                     " mvaPenalty=${rlHeadlessTrainingConfig.mvaConflictPenalty}, aircraftConflictPenalty=${rlHeadlessTrainingConfig.aircraftConflictPenalty}," +
                     " wakePenalty=${rlHeadlessTrainingConfig.wakeConflictPenalty}, randomSpawnChance=${rlHeadlessTrainingConfig.randomSpawnChance}," +
@@ -335,11 +337,8 @@ class GameServer private constructor(
             }
             val tfcSystemInterval = TrafficSystemInterval(arrivalsToControlSpawner)
             val trajSystemInterval = TrajectorySystemInterval()
-            baselineAI = HoldAndDispatch(
-                this, tfcSystemInterval.conflictManager, goalReward,
-                mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
-            )
-            CsvWriter.setRunDirectory(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")))
+            baselineAI = HoldAndDispatch(this, tfcSystemInterval.conflictManager, rlHeadlessTrainingConfig, arrivalsToControlSpawner)
+            CsvWriter.setRunDirectory(rlHeadlessTrainingConfig.debugSnapshotCsvPath)
 //            pythonGymBridge = PythonGymnasiumBridge(
 //                rlHeadlessTrainingConfig,
 //                tfcSystemInterval.conflictManager,
@@ -817,20 +816,7 @@ class GameServer private constructor(
             pendingRunnablesQueue.poll()?.run() ?: break
         }
 
-        baselineAI.update(aircraft, delta, ::stopServer) {
-            // Reset function - despawn current aircraft, create new aircraft
-            for (i in aircraft.size - 1 downTo 0) {
-                val ac = aircraft.getValueAt(i)
-                despawnAircraft(ac.entity)
-            }
-            aircraft.clear()
-
-            val airport = airports.getValueAt(0).entity
-
-            // Force spawn 1 aircraft on start
-            createRandomArrivalForAirport(airport, this)
-            airport[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = SPAWN_INTERVAL_S
-        }
+        baselineAI.update(aircraft, delta, ::stopServer)
 
 //        pythonGymBridge.update(aircraft, this::stopServer, this)
     }

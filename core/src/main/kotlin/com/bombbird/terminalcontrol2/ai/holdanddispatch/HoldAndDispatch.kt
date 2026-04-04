@@ -25,10 +25,14 @@ import com.bombbird.terminalcontrol2.global.HALF_TURN_RATE_THRESHOLD_IAS
 import com.bombbird.terminalcontrol2.global.MAX_HIGH_SPD_ANGULAR_SPD
 import com.bombbird.terminalcontrol2.global.MAX_LOW_SPD_ANGULAR_SPD
 import com.bombbird.terminalcontrol2.global.MAX_RL_AIRCRAFT
+import com.bombbird.terminalcontrol2.gymnasium.appendConflictDebugCsv
+import com.bombbird.terminalcontrol2.gymnasium.staterestore.RLStateRestoreManager
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.navigation.ClearanceState
 import com.bombbird.terminalcontrol2.navigation.Route
 import com.bombbird.terminalcontrol2.networking.GameServer
+import com.bombbird.terminalcontrol2.networking.RLHeadlessTrainingConfig
+import com.bombbird.terminalcontrol2.traffic.ArrivalsToControlSpawner
 import com.bombbird.terminalcontrol2.traffic.WakeMatrix
 import com.bombbird.terminalcontrol2.traffic.conflict.Conflict
 import com.bombbird.terminalcontrol2.traffic.conflict.ConflictManager
@@ -55,8 +59,10 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 class HoldAndDispatch(
-    private val gs: GameServer, private val conflictManager: ConflictManager,
-    goalReward: Float, mvaConflictPenalty: Float, aircraftConflictPenalty: Float, wakeConflictPenalty: Float
+    private val gs: GameServer,
+    private val conflictManager: ConflictManager,
+    private val rlConfig: RLHeadlessTrainingConfig,
+    private val arrivalSpawnController: ArrivalsToControlSpawner,
 ): Agent {
     companion object {
         var timePassed = 0f
@@ -67,9 +73,7 @@ class HoldAndDispatch(
     private var stepCountdown = STEP_INTERVAL
     private var episodeCounter = -1
     private var episodeStepCounter = 0
-    private val rewardHandler = RewardHandler(
-        conflictManager, true, goalReward, mvaConflictPenalty, aircraftConflictPenalty, wakeConflictPenalty
-    )
+    private val rewardHandler = RewardHandler(conflictManager, rlConfig)
 
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
     private val distNmFromFAF = 10
@@ -79,6 +83,8 @@ class HoldAndDispatch(
     private var lastDispatchedAircraft: Aircraft? = null
     private lateinit var targetLocPoint: Position
     private lateinit var targetApp: Approach
+
+    private val rlStateRestoreManager = RLStateRestoreManager(5)
 
     enum class AIState {
         PENDING_ENTER_HOLD,
@@ -139,14 +145,20 @@ class HoldAndDispatch(
         for (i in 0 until acArray.size) acArray[i] = null
     }
 
-    override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit, resetEpisode: () -> Unit) {
-        if (aircraft.isEmpty || episodeStepCounter >= 600) {
-            resetEpisode()
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit) {
+        val randomDone = (aircraft.isEmpty || episodeStepCounter >= 600) && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL
+        val scriptedDone = aircraft.isEmpty && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.SCRIPTED && arrivalSpawnController.doneSpawning
+
+        if (randomDone || scriptedDone) {
+            arrivalSpawnController.reset(gs)
             reset()
 
             if (episodeCounter % 10 == 0 && episodeCounter > 0) println("Finished episode $episodeCounter")
 
-            if (episodeCounter >= 256) {
+            val randomEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL && episodeCounter >= 512
+            val scriptedEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.SCRIPTED && episodeCounter >= 1
+
+            if (randomEnd || scriptedEnd) {
                 stopServer()
                 return
             }
@@ -326,6 +338,16 @@ class HoldAndDispatch(
                     mvaConflicts++
                 } else if (conflict.reason == Conflict.WAKE_INFRINGE) {
                     wakeConflicts++
+                }
+            }
+
+            rlConfig.debugSnapshotCsvPath?.takeIf { it.isNotBlank() }?.let { outPath ->
+                if (acConflicts == 0 && mvaConflicts == 0 && wakeConflicts == 0) return@let
+                try {
+                    val snapshot = rlStateRestoreManager.getSnapshot(gs)
+                    appendConflictDebugCsv(outPath, "${rlConfig.envId}_$episodeCounter", snapshot, conflicts)
+                } catch (t: Throwable) {
+                    FileLog.warn("HoldAndDispatch", "Failed to write conflict debug CSV: ${t.message}")
                 }
             }
 

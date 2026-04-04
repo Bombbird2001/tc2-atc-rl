@@ -172,33 +172,17 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
         }
     } ?: Route()
     val origStarRoute = Route().apply { setToRouteCopy(starRoute) }
-    val spawnPos: Triple<Float, Float, Float>
 
     val useRandomSpawn = MathUtils.randomBoolean(gs.randomSpawnChance)
-    val spawnGroup: Byte
 
-    if (useRandomSpawn) {
-        val spawnDir = MathUtils.random(280f)
-
-        val distNm = 39.5f
-
-        val spawnPosVec = (Vector2.Y * nmToPx(distNm)).rotateDeg(-spawnDir)
-        val randomTrackJitter = 0f
-        val spawnTrack = modulateHeading(spawnDir + randomTrackJitter)
-        val offsetX = 0f
-        val offsetY = 0f
-        spawnPos = Triple(spawnPosVec.x + offsetX, spawnPosVec.y + offsetY, spawnTrack)
-        spawnGroup = -1
-    } else {
-        spawnPos = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
-        // Add spawn group for fairness tracking
-        spawnGroup = when (randomStar!!.name.substring(0, 5)) {
-            "TABUN", "SAUNA" -> SpawnGroup.SPAWN_WEST
-            "RAKTO", "UGABO" -> SpawnGroup.SPAWN_EAST
-            "GABAL", "ATALO" -> SpawnGroup.SPAWN_NORTH
-            "VEROP" -> SpawnGroup.SPAWN_SOUTH
-            else -> throw IllegalArgumentException("Invalid STAR: ${randomStar.name}")
-        }
+    val spawnPos: Triple<Float, Float, Float> = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
+    // Add spawn group for fairness tracking
+    val spawnGroup: Byte = when (randomStar!!.name.substring(0, 5)) {
+        "TABUN", "SAUNA" -> SpawnGroup.SPAWN_WEST
+        "RAKTO", "UGABO" -> SpawnGroup.SPAWN_EAST
+        "GABAL", "ATALO" -> SpawnGroup.SPAWN_NORTH
+        "VEROP" -> SpawnGroup.SPAWN_SOUTH
+        else -> throw IllegalArgumentException("Invalid STAR: ${randomStar.name}")
     }
 
     gs.aircraft.put(callsign, Aircraft(callsign, spawnPos.first, spawnPos.second, 0f, icaoType, FlightType.ARRIVAL, false))
@@ -209,20 +193,35 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     } else {
         calculateArrivalSpawnAltitude(ac.entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
     }
-    finishArrivalEntitySetup(ac, airport, gs, spawnPos.first, spawnPos.second, spawnPos.third, rawAlt, spawnGroup, disableAmendAltForNearbyTraffic = false)
+    finishArrivalEntitySetup(
+        ac, airport, gs, spawnPos.first, spawnPos.second, spawnPos.third, rawAlt,
+        spawnGroup, randomStar.name, starRoute, disableAmendAltForNearbyTraffic = false
+    )
 }
 
 private val spawnGroupPos = arrayOf(
     173.0f to 996.5f,
     965.9704f to -287.3346f,
     -823.157f to -577.0513f,
-    -823.157f to -577.0513f,
+    -99999f to -99999f,
     -31.541626f to -1009.12244f
 )
 private fun computeSpawnGroup(spawnX: Float, spawnY: Float): Byte {
     return spawnGroupPos.map {
         calculateDistanceBetweenPoints(spawnX, spawnY, it.first, it.second)
     }.withIndex().minBy { it.value }.index.byte
+}
+
+private fun getStarFromSpawnGroup(airport: Entity, spawnGroup: Byte): SidStar.STAR {
+    val starName = when (spawnGroup) {
+        SpawnGroup.SPAWN_NORTH -> "GABAL2A"
+        SpawnGroup.SPAWN_EAST -> "RAKTO2A"
+        SpawnGroup.SPAWN_SOUTH -> "VEROP2A"
+        SpawnGroup.SPAWN_WEST -> "TABUN1A"
+        else -> throw IllegalArgumentException("Invalid spawn group $spawnGroup")
+    }
+
+    return airport[STARChildren.mapper]?.starMap[starName]!!
 }
 
 /**
@@ -247,7 +246,24 @@ fun createArrival(
     val newAc = Aircraft(callsign, xPx, yPx, 0f, icaoType, FlightType.ARRIVAL, false)
     gs.aircraft.put(callsign, newAc)
     newAc.entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
-    finishArrivalEntitySetup(newAc, airport, gs, xPx, yPx, trackDeg + 180, altitudeFt, computeSpawnGroup(xPx, yPx), disableAmendAltForNearbyTraffic)
+
+    val spawnGroup = computeSpawnGroup(xPx, yPx)
+    val star = getStarFromSpawnGroup(airport, spawnGroup)
+    val starRoute = star.getRandomSTARRouteForRunway()
+
+    // We won't use the positions returned from the function, we're just calling it to trim the STAR route
+    val (defaultX, defaultY, _) = calculateArrivalSpawnPoint(starRoute, gs.primarySector)
+
+    // Remove the first leg only if we spawned far away from the actual spawn entry point of the spawn group
+    val removeFirstPoint = calculateDistanceBetweenPoints(defaultX, defaultY, xPx, yPx) > nmToPx(5)
+    if (removeFirstPoint && starRoute.size > 1 && starRoute[1] is Route.WaypointLeg) {
+        starRoute.removeIndex(0)
+    }
+
+    finishArrivalEntitySetup(
+        newAc, airport, gs, xPx, yPx, trackDeg + 180, altitudeFt,
+        spawnGroup, star.name, starRoute, disableAmendAltForNearbyTraffic
+    )
 }
 
 private fun finishArrivalEntitySetup(
@@ -259,6 +275,8 @@ private fun finishArrivalEntitySetup(
     oppTrackDeg: Float,
     rawAltitudeFt: Float,
     spawnGroup: Byte,
+    starName: String?,
+    starRoute: Route,
     disableAmendAltForNearbyTraffic: Boolean
 ) {
     ac.entity.also { entity ->
@@ -270,7 +288,7 @@ private fun finishArrivalEntitySetup(
         val dir = (entity[Direction.mapper] ?: Direction()).apply { trackUnitVector.rotateDeg(-oppTrackDeg - 180) }
         val aircraftPerf = entity[AircraftInfo.mapper]?.aircraftPerf ?: AircraftTypeData.AircraftPerfData()
 //        val ias = calculateArrivalSpawnIAS(origStarRoute, starRoute, alt, aircraftPerf)
-        val ias: Short = 240
+        val ias = BASELINE_INITIAL_SPD
         val tas = calculateTASFromIAS(alt, ias.toFloat())
         val nextWpt = (if (starRoute.size > 0) starRoute[0] else null) as? Route.WaypointLeg
         val nextMinStarAlt = (ceil((getHighestMinAlt(starRoute) ?: Int.MIN_VALUE) / 1000f) * 1000).roundToInt()
@@ -288,8 +306,8 @@ private fun finishArrivalEntitySetup(
             val tasVector = dir.trackUnitVector * ktToPxps(speed.speedKts.toInt())
             trackVectorPxps = tasVector + affectedByWind.windVectorPxps
         }
-        val clearanceAct = ClearanceAct(ClearanceState(randomStar?.name ?: "", starRoute, Route(),
-                if (starRoute.size == 0) (spawnPos.third + MAG_HDG_DEV).toInt().toShort() else null, null,
+        val clearanceAct = ClearanceAct(ClearanceState(starName ?: "", starRoute, Route(),
+                if (starRoute.size == 0) modulateHeading(oppTrackDeg + 180 + MAG_HDG_DEV).toInt().toShort() else null, null,
                 clearedAlt, false, ias).ActingClearance())
         entity += clearanceAct
         entity[CommandTarget.mapper]?.apply {

@@ -4,12 +4,12 @@ import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.files.FileHandle
+import com.bombbird.terminalcontrol2.ai.Agent
 import com.bombbird.terminalcontrol2.components.AirportArrivalStats
 import com.bombbird.terminalcontrol2.components.AirportInfo
 import com.bombbird.terminalcontrol2.components.ArrivalAirport
 import com.bombbird.terminalcontrol2.components.FlightType
 import com.bombbird.terminalcontrol2.components.SpawnGroup
-import com.bombbird.terminalcontrol2.gymnasium.GymnasiumBridge
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.MAX_AIRCRAFT_ON_MAP
 import com.bombbird.terminalcontrol2.global.SPAWN_INTERVAL_S
@@ -118,25 +118,25 @@ class ArrivalsToControlSpawner {
     fun tickArrivalsToControl(
         interval: Float,
         gs: GameServer,
-        bridge: GymnasiumBridge,
-        airportArrivalStats: ImmutableArray<Entity>,
+        agent: Agent,
+        airports: ImmutableArray<Entity>,
         arrivalFamilyEntities: ImmutableArray<Entity>
     ) {
         when (policy) {
-            Policy.RANDOM_RL -> tickRandomRl(interval, gs, bridge, airportArrivalStats, arrivalFamilyEntities)
-            Policy.SCRIPTED -> tickScripted(interval, gs, bridge, airportArrivalStats, arrivalFamilyEntities)
+            Policy.RANDOM_RL -> tickRandomRl(interval, gs, agent, airports, arrivalFamilyEntities)
+            Policy.SCRIPTED -> tickScripted(interval, gs, agent, airports)
         }
     }
 
     private fun tickRandomRl(
         interval: Float,
         gs: GameServer,
-        bridge: GymnasiumBridge,
-        airportArrivalStats: ImmutableArray<Entity>,
+        agent: Agent,
+        airports: ImmutableArray<Entity>,
         arrivalFamilyEntities: ImmutableArray<Entity>
     ) {
-        for (i in 0 until airportArrivalStats.size()) {
-            val arptEntity = airportArrivalStats[i]
+        for (i in 0 until airports.size()) {
+            val arptEntity = airports[i]
             val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: continue
             arptArrStats.targetTrafficValue = MAX_AIRCRAFT_ON_MAP
             arptArrStats.arrivalSpawnTimer -= interval
@@ -149,7 +149,7 @@ class ArrivalsToControlSpawner {
             if (arrivalCount >= arptArrStats.targetTrafficValue) continue
             if (doneSpawning) continue
             createRandomArrivalForAirport(arptEntity, gs)
-            bridge.incrementSpawnCount()
+            agent.incrementSpawnCount()
             spawnedCount++
         }
     }
@@ -157,19 +157,12 @@ class ArrivalsToControlSpawner {
     private fun tickScripted(
         interval: Float,
         gs: GameServer,
-        bridge: GymnasiumBridge,
-        airportArrivalStats: ImmutableArray<Entity>,
-        arrivalFamilyEntities: ImmutableArray<Entity>
+        agent: Agent,
+        airports: ImmutableArray<Entity>,
     ) {
         if (doneSpawning) return
 
-        val arptEntity = findAirportEntityWithId(airportArrivalStats, 0) ?: return
-        val arptArrStats = arptEntity[AirportArrivalStats.mapper] ?: return
-        arptArrStats.targetTrafficValue = MAX_AIRCRAFT_ON_MAP
-
-        val arptId = arptEntity[AirportInfo.mapper]?.arptId ?: return
-        val arrivalCount = countArrivalsForAirport(arrivalFamilyEntities, arptId)
-        if (arrivalCount >= arptArrStats.targetTrafficValue) return
+        val arptEntity = findAirportEntityWithId(airports, 0) ?: return
 
         secondsSinceLastScriptedSpawn += interval
         val entry = scriptedEntries[scriptedNextIndex]
@@ -186,7 +179,7 @@ class ArrivalsToControlSpawner {
             entry.trackDeg,
             disableAmendAltForNearbyTraffic = true
         )
-        bridge.incrementSpawnCount()
+        agent.incrementSpawnCount()
         spawnedCount++
         scriptedNextIndex++
         secondsSinceLastScriptedSpawn = 0f

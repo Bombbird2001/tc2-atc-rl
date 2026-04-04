@@ -9,7 +9,7 @@ interface Agent {
 
     fun reset()
 
-    fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit, resetEpisode: () -> Unit)
+    fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit)
 
     fun getEpisodeSpawnCount(): Int
 
@@ -23,7 +23,7 @@ object StubAgent: Agent {
 
     override fun reset() {}
 
-    override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit, resetEpisode: () -> Unit) {}
+    override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit) {}
 
     override fun getEpisodeSpawnCount(): Int = 0
 

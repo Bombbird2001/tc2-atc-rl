@@ -338,7 +338,7 @@ class PythonGymnasiumBridge(
             var shouldAddSnapshot = true
 
             if (rlConfig.evalMode && conflicts.notEmpty()) {
-                // Temp snaphost solely for saving to CSV for manual analysis if needed
+                // Temp snapshot solely for saving to CSV for manual analysis if needed
                 val tempSnapshot = rlStateRestoreManager.getSnapshot(gs)
 
                 // Only resolve conflicts that require the largest rollback stepsBack (10 = no-LOC, 30 = LOC)
@@ -368,7 +368,7 @@ class PythonGymnasiumBridge(
                     } else {
                         // Failure (actionOverrides == null): backup already restored inside resolveConflicts; skip this writeState
                         // to avoid applying writeState twice for the same logical time T.
-                        gs.rlHeadlessTrainingConfig.debugSnapshotCsvPath?.takeIf { it.isNotBlank() }?.let { outPath ->
+                        rlConfig.debugSnapshotCsvPath?.takeIf { it.isNotBlank() }?.let { outPath ->
                             try {
                                 appendConflictDebugCsv(outPath, "${rlConfig.envId}_$logEpisode", tempSnapshot, conflicts)
                             } catch (t: Throwable) {

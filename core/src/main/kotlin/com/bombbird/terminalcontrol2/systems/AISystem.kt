@@ -265,9 +265,9 @@ class AISystem: EntitySystem() {
                 val clearanceAct = get(ClearanceAct.mapper) ?: return@apply
                 if (alt.altitudeFt < 11000 && cmd.targetAltFt <= 10000) {
                     // 240 knots for baseline for fairness during testing
-                    if (cmd.targetIasKt > 240) {
-                        cmd.targetIasKt = 240
-                        clearanceAct.actingClearance.clearanceState.clearedIas = 240
+                    if (cmd.targetIasKt > BASELINE_INITIAL_SPD) {
+                        cmd.targetIasKt = BASELINE_INITIAL_SPD
+                        clearanceAct.actingClearance.clearanceState.clearedIas = BASELINE_INITIAL_SPD
                     }
                     remove<DecelerateTo240kts>()
                     this += LatestClearanceChanged()

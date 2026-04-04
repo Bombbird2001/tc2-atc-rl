@@ -1,5 +1,6 @@
 import com.badlogic.ashley.core.Entity
 import com.badlogic.ashley.utils.ImmutableArray
+import com.bombbird.terminalcontrol2.ai.Agent
 import com.badlogic.gdx.utils.Array as GdxArray
 import com.bombbird.terminalcontrol2.components.AirportArrivalStats
 import com.bombbird.terminalcontrol2.components.ApproachChildren
@@ -9,7 +10,6 @@ import com.bombbird.terminalcontrol2.entities.Airport
 import com.bombbird.terminalcontrol2.global.AIRCRAFT_TO_SPAWN
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.GAME_SERVER_THREAD_NAME
-import com.bombbird.terminalcontrol2.gymnasium.GymnasiumBridge
 import com.bombbird.terminalcontrol2.navigation.Approach
 import com.bombbird.terminalcontrol2.networking.GameServer
 import com.bombbird.terminalcontrol2.traffic.ArrivalsToControlSpawner
@@ -18,6 +18,9 @@ import com.bombbird.terminalcontrol2.traffic.despawnAircraft
 import com.bombbird.terminalcontrol2.traffic.loadScriptedSpawnEntriesFromCsvString
 import com.bombbird.terminalcontrol2.utilities.nmToPx
 import com.bombbird.terminalcontrol2.components.RunwayLabel
+import com.bombbird.terminalcontrol2.components.STARChildren
+import com.bombbird.terminalcontrol2.navigation.SidStar
+import com.bombbird.terminalcontrol2.utilities.UsabilityFilter
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -25,19 +28,25 @@ import ktx.ashley.get
 import ktx.collections.GdxArrayMap
 import kotlin.random.Random
 
-private class FakeBridge(private val fixedCount: Int) : GymnasiumBridge {
+private class FakeAgent(private val fixedCount: Int): Agent {
     var incrementCount = 0
+        private set
     override fun getEpisodeSpawnCount() = fixedCount
     override fun incrementSpawnCount() {
         incrementCount++
     }
 
+    override fun despawnAircraft(aircraft: Entity) {}
+
+    override fun init() {}
+
+    override fun reset() {}
+
     override fun update(
         aircraft: GdxArrayMap<String, Aircraft>,
+        deltaTime: Float,
         stopServer: () -> Unit,
-        gs: GameServer,
-    ) {
-    }
+    ) {}
 }
 
 object ArrivalsToControlSpawnerTest : FunSpec() {
@@ -106,7 +115,7 @@ object ArrivalsToControlSpawnerTest : FunSpec() {
             val stats = immutableArrayOf(arptEntity)
             val arrivals = emptyEntityArray()
             val spawner = ArrivalsToControlSpawner()
-            val bridge = FakeBridge(AIRCRAFT_TO_SPAWN)
+            val bridge = FakeAgent(AIRCRAFT_TO_SPAWN)
             repeat(AIRCRAFT_TO_SPAWN + 1) {
                 spawner.tickArrivalsToControl(1f, gs, bridge, stats, arrivals)
                 arptEntity[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = -1f
@@ -119,6 +128,10 @@ object ArrivalsToControlSpawnerTest : FunSpec() {
             clearAllAircraftForSpawnerTest(gs)
             val arptEntity = ensureTestAirportWithIls02L(gs)
             arptEntity[AirportArrivalStats.mapper]!!.arrivalSpawnTimer = -1f
+            arptEntity[STARChildren.mapper]!!.starMap.put("GABAL2A", SidStar.STAR("GABAL2A", UsabilityFilter.DAY_AND_NIGHT, ""))
+            arptEntity[STARChildren.mapper]!!.starMap.put("RAKTO2A", SidStar.STAR("RAKTO2A", UsabilityFilter.DAY_AND_NIGHT, ""))
+            arptEntity[STARChildren.mapper]!!.starMap.put("VEROP2A", SidStar.STAR("VEROP2A", UsabilityFilter.DAY_AND_NIGHT, ""))
+            arptEntity[STARChildren.mapper]!!.starMap.put("TABUN1A", SidStar.STAR("TABUN1A", UsabilityFilter.DAY_AND_NIGHT, ""))
             val stats = immutableArrayOf(arptEntity)
             val arrivals = emptyEntityArray()
             val callsign = "SC${Random.nextInt(100000, 999999)}"
@@ -136,9 +149,9 @@ object ArrivalsToControlSpawnerTest : FunSpec() {
                     )
                 )
             )
-            val bridge = FakeBridge(AIRCRAFT_TO_SPAWN)
-            spawner.tickArrivalsToControl(1f, gs, bridge, stats, arrivals)
-            bridge.incrementCount shouldBe 1
+            val agent = FakeAgent(AIRCRAFT_TO_SPAWN)
+            spawner.tickArrivalsToControl(1f, gs, agent, stats, arrivals)
+            agent.incrementCount shouldBe 1
             gs.aircraft.containsKey(callsign) shouldBe true
         }
     }

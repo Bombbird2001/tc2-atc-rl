@@ -80,7 +80,7 @@ class TrafficSystemInterval(val arrivalsToControlSpawner: ArrivalsToControlSpawn
                     arrivalsToControlSpawner.tickArrivalsToControl(
                         interval,
                         this,
-                        pythonGymBridge,
+                        baselineAI,
                         airportArrivalStats,
                         arrivalFamilyEntities.getEntities()
                     )

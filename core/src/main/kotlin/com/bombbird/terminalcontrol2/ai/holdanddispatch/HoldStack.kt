@@ -1,5 +1,6 @@
 package com.bombbird.terminalcontrol2.ai.holdanddispatch
 
+import com.bombbird.terminalcontrol2.components.AircraftInfo
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.navigation.Route
@@ -10,7 +11,11 @@ import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.nmToPx
 import ktx.ashley.get
 import ktx.collections.GdxArray
+import ktx.collections.GdxArrayMap
+import ktx.collections.isNotEmpty
+import ktx.collections.set
 import ktx.collections.sortBy
+import kotlin.math.max
 
 class AircraftHold(val aircraft: Aircraft, val timeEnteredHold: Float)
 
@@ -22,6 +27,31 @@ class HoldStack(
     private val wptId = createCustomHoldWaypoint(posX, posY, customName)
     private val inHoldStack = GdxArray<AircraftHold>()
     private val pendingEnterHold = GdxArray<Aircraft>()
+
+    fun checkAircraftClearedAltNoConflict() {
+        val altitudesTaken = GdxArrayMap<Int, Pair<String, String>>()
+        for (hold in inHoldStack) {
+            val alt = getLatestClearanceState(hold.aircraft.entity)!!.clearedAlt
+            val callsign = hold.aircraft.entity[AircraftInfo.mapper]!!.icaoCallsign
+            if (altitudesTaken.containsKey(alt)) {
+                println(inHoldStack.map { "${it.aircraft.entity[AircraftInfo.mapper]!!.icaoCallsign} ${getLatestClearanceState(it.aircraft.entity)!!.clearedAlt}" })
+                println(pendingEnterHold.map { "${it.entity[AircraftInfo.mapper]!!.icaoCallsign} ${getLatestClearanceState(it.entity)!!.clearedAlt}" })
+                throw IllegalStateException("$callsign cleared to $alt ft in hold, but it is already taken by ${altitudesTaken[alt]}")
+            }
+            altitudesTaken[alt] = callsign to "in hold"
+        }
+
+        for (aircraft in pendingEnterHold) {
+            val alt = getLatestClearanceState(aircraft.entity)!!.clearedAlt
+            val callsign = aircraft.entity[AircraftInfo.mapper]!!.icaoCallsign
+            if (altitudesTaken.containsKey(alt)) {
+                println(inHoldStack.map { "${it.aircraft.entity[AircraftInfo.mapper]!!.icaoCallsign} ${getLatestClearanceState(it.aircraft.entity)!!.clearedAlt}" })
+                println(pendingEnterHold.map { "${it.entity[AircraftInfo.mapper]!!.icaoCallsign} ${getLatestClearanceState(it.entity)!!.clearedAlt}" })
+                throw IllegalStateException("$callsign cleared to $alt ft before hold, but it is already taken by ${altitudesTaken[alt]}")
+            }
+            altitudesTaken[alt] = callsign to "pending hold"
+        }
+    }
 
     fun sortHoldAircraftByClearedAlt() {
         inHoldStack.sortBy { hold -> getLatestClearanceState(hold.aircraft.entity)!!.clearedAlt }
@@ -47,6 +77,7 @@ class HoldStack(
             val clearance = getLatestClearanceState(ac)!!
             val newClearance = clearance.copy(clearedAlt = clearance.clearedAlt - holdAltInterval, route = Route().apply { setToRouteCopy(clearance.route) })
             addNewClearanceToPendingClearances(ac, newClearance, 0)
+//            println("Cleared ${ac[AircraftInfo.mapper]!!.icaoCallsign} in hold to ${newClearance.clearedAlt}")
         }
     }
 
@@ -63,19 +94,15 @@ class HoldStack(
     }
 
     fun getHighestEnteringHoldAltitude(): Int {
-        if (pendingEnterHold.isEmpty) {
-            if (inHoldStack.isEmpty) {
-                return -1
-            }
+        val inHoldMax = if (inHoldStack.isNotEmpty()) inHoldStack.maxOf { holdInfo ->
+            getLatestClearanceState(holdInfo.aircraft.entity)!!.clearedAlt
+        } else -1
 
-            return inHoldStack.maxOf { holdInfo ->
-                getLatestClearanceState(holdInfo.aircraft.entity)!!.clearedAlt
-            }
-        }
-
-        return pendingEnterHold.maxOf { ac ->
+        val pendingHoldMax = if (pendingEnterHold.isNotEmpty()) pendingEnterHold.maxOf { ac ->
             getLatestClearanceState(ac.entity)!!.clearedAlt
-        }
+        } else -1
+
+        return max(inHoldMax, pendingHoldMax)
     }
 
     fun getAircraftEnteringHoldInLowerLayerFarEnough(currentAlt: Int, minDistNm: Int): Aircraft? {
@@ -101,6 +128,7 @@ class HoldStack(
             val clearance = getLatestClearanceState(ac.entity)!!
             val newClearance = clearance.copy(clearedAlt = clearance.clearedAlt - holdAltInterval, route = Route().apply { setToRouteCopy(clearance.route) })
             addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
+//            println("Cleared ${ac.entity[AircraftInfo.mapper]!!.icaoCallsign} pending hold to ${newClearance.clearedAlt}")
         }
     }
 

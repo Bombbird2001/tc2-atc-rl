@@ -79,3 +79,5 @@ nb-configuration.xml
 extJars/
 runs/
 scripted-flights/
+.cursor/
+*.sh

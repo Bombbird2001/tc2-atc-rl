@@ -193,7 +193,7 @@ class TrajectoryManager {
         // Send all predicted conflicts to clients using TCP
         GAME.gameServer?.sendPredictedConflicts(predictedConflicts)
 
-        resolveACCConflicts()
+        // resolveACCConflicts()
     }
 
     private fun checkAllTrajectoryPointConflicts(allTrajectoryPoints: Array<Array<GdxArray<TrajectoryPoint>>>): GdxArrayMap<ConflictPair, PredictedConflict> {

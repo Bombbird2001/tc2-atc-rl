@@ -71,7 +71,7 @@ class HoldAndDispatch(
     }
 
     private var stepCountdown = STEP_INTERVAL
-    private var episodeCounter = -1
+    private var episodeCounter = 0
     private var episodeStepCounter = 0
     private val rewardHandler = RewardHandler(conflictManager, rlConfig)
 
@@ -128,8 +128,13 @@ class HoldAndDispatch(
 
     override fun despawnAircraft(aircraft: Entity) {
         val acIndex = acArray.indexOf(aircraft)
-        if (acIndex == -1) return
+        val callsign = aircraft[AircraftInfo.mapper]?.icaoCallsign!!
+        if (acIndex == -1) {
+            throw IllegalStateException("$callsign not found")
+        }
         acArray[acIndex] = null
+        acStates.removeKey(callsign)
+        assignedStack.removeKey(callsign)
     }
 
     override fun reset() {
@@ -147,7 +152,7 @@ class HoldAndDispatch(
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit) {
         val randomDone = (aircraft.isEmpty || episodeStepCounter >= 600) && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL
-        val scriptedDone = aircraft.isEmpty && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.SCRIPTED && arrivalSpawnController.doneSpawning
+        val scriptedDone = (aircraft.isEmpty || episodeStepCounter >= 8900) && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.SCRIPTED && arrivalSpawnController.doneSpawning
 
         if (randomDone || scriptedDone) {
             arrivalSpawnController.reset(gs)
@@ -155,7 +160,7 @@ class HoldAndDispatch(
 
             if (episodeCounter % 10 == 0 && episodeCounter > 0) println("Finished episode $episodeCounter")
 
-            val randomEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL && episodeCounter >= 512
+            val randomEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL && episodeCounter >= 1024
             val scriptedEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.SCRIPTED && episodeCounter >= 1
 
             if (randomEnd || scriptedEnd) {
@@ -223,6 +228,7 @@ class HoldAndDispatch(
                     newClearance.clearedAlt = newAlt
                     newClearance.deactivateAllAltRestrictions()
                     addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
+//                    println("Initial clearance for $callsign is $newAlt")
                     holdStack.addAircraftToEnteringHold(ac)
                     assignedStack[callsign] = holdStack
                     acStates[callsign] = AIState.PENDING_ENTER_HOLD
@@ -239,11 +245,13 @@ class HoldAndDispatch(
                     while (currentClearedAlt > idealHoldAlt) {
                         val aircraftToSwapAlts = stack.getAircraftEnteringHoldInLowerLayerFarEnough(currentClearedAlt, 15) ?: break
                         val toSwapOriginal = getLatestClearanceState(aircraftToSwapAlts.entity)!!
+//                        val origCurrAlt = currentClearedAlt
                         val toSwapClearance = toSwapOriginal.copy(clearedAlt = currentClearedAlt, route = Route().apply { setToRouteCopy(toSwapOriginal.route) })
                         val newClearance = latestClearance.copy(clearedAlt = currentClearedAlt - holdAltInterval, route = Route().apply { setToRouteCopy(latestClearance.route) })
                         addNewClearanceToPendingClearances(aircraftToSwapAlts.entity, toSwapClearance, 0)
                         addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
                         currentClearedAlt -= holdAltInterval
+//                        println("Swapped $callsign to $currentClearedAlt, ${aircraftToSwapAlts.entity[AircraftInfo.mapper]!!.icaoCallsign} to $origCurrAlt")
                     }
                     stack.addAircraftToHold(ac, timePassed)
                     holdCountChanged = true
@@ -312,6 +320,11 @@ class HoldAndDispatch(
                 acStates[ac.entity[AircraftInfo.mapper]!!.icaoCallsign] = AIState.EXITED_HOLD
                 updateHoldingTimeStatistics(timePassed - holdInfo.timeEnteredHold)
             }
+        }
+
+        // Sanity check that no 2 aircraft are cleared to same altitude in same stack
+        for (stack in holdingStacks) {
+            stack.checkAircraftClearedAltNoConflict()
         }
 
         if (holdCountChanged) {

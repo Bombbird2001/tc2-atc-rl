@@ -5,6 +5,7 @@ import com.badlogic.ashley.core.Entity
 import com.badlogic.gdx.math.Vector2
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.entities.Airport
+import com.bombbird.terminalcontrol2.global.BASELINE_INITIAL_SPD
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.GAME_SERVER_THREAD_NAME
 import com.bombbird.terminalcontrol2.global.getEngine
@@ -254,8 +255,8 @@ object AISystemTest: FunSpec() {
             entity[CommandTarget.mapper]?.targetIasKt = tripIas
             entity[CommandTarget.mapper]?.targetAltFt = 9000
             runUpdate()
-            entity[CommandTarget.mapper]?.targetIasKt.shouldNotBeNull() shouldBe 240
-            entity[ClearanceAct.mapper]?.actingClearance?.clearanceState?.clearedIas.shouldNotBeNull() shouldBe 240
+            entity[CommandTarget.mapper]?.targetIasKt.shouldNotBeNull() shouldBe BASELINE_INITIAL_SPD
+            entity[ClearanceAct.mapper]?.actingClearance?.clearanceState?.clearedIas.shouldNotBeNull() shouldBe BASELINE_INITIAL_SPD
             entity.hasNot(DecelerateTo240kts.mapper).shouldBeTrue()
         }
 
@@ -266,8 +267,8 @@ object AISystemTest: FunSpec() {
             entity[CommandTarget.mapper]?.targetIasKt = tripIas
             entity[CommandTarget.mapper]?.targetAltFt = 10000
             runUpdate()
-            entity[CommandTarget.mapper]?.targetIasKt.shouldNotBeNull() shouldBe 240
-            entity[ClearanceAct.mapper]?.actingClearance?.clearanceState?.clearedIas.shouldNotBeNull() shouldBe 240
+            entity[CommandTarget.mapper]?.targetIasKt.shouldNotBeNull() shouldBe BASELINE_INITIAL_SPD
+            entity[ClearanceAct.mapper]?.actingClearance?.clearanceState?.clearedIas.shouldNotBeNull() shouldBe BASELINE_INITIAL_SPD
             entity.hasNot(DecelerateTo240kts.mapper).shouldBeTrue()
         }
 

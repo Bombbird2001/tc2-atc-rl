@@ -12,6 +12,7 @@ object CsvWriter {
     private const val MVA_CONFLICT_FILE = "mva_restricted.csv"
     private const val ARRIVAL_RATE_FILE = "arrival_rate.csv"
     private const val STEP_METRICS_FILE = "step_metrics.csv"
+    private const val AGENT_LIFESPAN_FILE = "agent_lifespan.csv"
     private var RUN_DIR: String? = null
 
     fun setRunDirectory(runDirectory: String?) {
@@ -24,30 +25,30 @@ object CsvWriter {
         return RUN_DIR?.isNotBlank() ?: false
     }
 
-    fun writeToAverageHoldingTime(currTime: Float, holdingTime: Float) {
+    fun writeToAverageHoldingTime(episode: Int, currTime: Float, holdingTime: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + AVG_HOLD_TIME_FILE,
-            listOf("Time (s)", "Holding time (last 30 aircraft)"),
-            listOf(currTime, holdingTime)
+            listOf("Episode", "Time (s)", "Holding time (last 30 aircraft)"),
+            listOf(episode, currTime, holdingTime)
         )
     }
 
-    fun writeToHoldingCount(currTime: Float, holdingCount: Float) {
+    fun writeToHoldingCount(episode: Int, currTime: Float, holdingCount: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + HOLD_COUNT_FILE,
-            listOf("Time (s)", "Aircraft in hold"),
-            listOf(currTime, holdingCount)
+            listOf("Episode", "Time (s)", "Aircraft in hold"),
+            listOf(episode, currTime, holdingCount)
         )
     }
 
-    fun writeToIndividualHoldTime(holdingTime: Float) {
+    fun writeToIndividualHoldTime(episode: Int, holdingTime: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + INDIVIDUAL_HOLD_TIME_FILE,
-            listOf("Holding time"),
-            listOf(holdingTime)
+            listOf("Episode", "Holding time"),
+            listOf(episode, holdingTime)
         )
     }
 
@@ -98,6 +99,15 @@ object CsvWriter {
                 *rewards.withIndex().map { "ac${it.index}" }.toTypedArray()
             ),
             listOf(episode, step, activeCount, spawnCount, mvaConflicts, acConflicts, wakeConflicts, *rewards)
+        )
+    }
+
+    fun writeAgentLifespan(episode: Int, agentGroup: Byte, lifespanS: Float) {
+        if (!checkRunDir()) return
+        writeToCsv(
+            RUN_DIR + AGENT_LIFESPAN_FILE,
+            listOf("Episode", "Spawn group", "Lifespan (s)"),
+            listOf(episode, agentGroup, lifespanS)
         )
     }
 

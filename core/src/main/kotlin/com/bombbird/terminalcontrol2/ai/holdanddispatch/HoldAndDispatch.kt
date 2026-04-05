@@ -14,12 +14,15 @@ import com.bombbird.terminalcontrol2.components.ClearanceAct
 import com.bombbird.terminalcontrol2.components.CommandTarget
 import com.bombbird.terminalcontrol2.components.Direction
 import com.bombbird.terminalcontrol2.components.GroundTrack
+import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
+import com.bombbird.terminalcontrol2.components.SpawnGroup
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
 import com.bombbird.terminalcontrol2.global.CHECK_AIRCRAFT_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_MVA_CONFLICT
 import com.bombbird.terminalcontrol2.global.CHECK_WAKE_CONFLICT
+import com.bombbird.terminalcontrol2.global.EPISODE_COUNT
 import com.bombbird.terminalcontrol2.global.HALF_TURN_RATE_THRESHOLD_IAS
 import com.bombbird.terminalcontrol2.global.MAX_HIGH_SPD_ANGULAR_SPD
 import com.bombbird.terminalcontrol2.global.MAX_LOW_SPD_ANGULAR_SPD
@@ -47,6 +50,7 @@ import com.bombbird.terminalcontrol2.utilities.getRequiredTrack
 import com.bombbird.terminalcontrol2.utilities.nmToPx
 import com.bombbird.terminalcontrol2.utilities.pxToNm
 import ktx.ashley.get
+import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.set
@@ -70,12 +74,12 @@ class HoldAndDispatch(
     }
 
     private var stepCountdown = STEP_INTERVAL
-    private var episodeCounter = 0
+    private var episodeCounter = -1
     private var episodeStepCounter = 0
     private val rewardHandler = RewardHandler(conflictManager, rlConfig)
 
     private data class LastDispatchInfo(
-        val lastAc: Aircraft, val wakeType: Char, val recatType: Char, val appSpd: Short,
+        var lastAc: Entity?, val wakeType: Char, val recatType: Char, val appSpd: Short,
         val dispatchTime: Float, val holdToLocDistPx: Float
     )
 
@@ -84,6 +88,7 @@ class HoldAndDispatch(
         val lastTravelledDist: Float, val currTravelledDist: Float, val lastDispatchTime: Float,
         val additionalTime: Float, val holdToLocDistTimeAdjustmentS: Float
     )
+    private var startLogging = false
 
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
     private val distNmFromFAF = 10
@@ -104,6 +109,7 @@ class HoldAndDispatch(
 
     private var spawnCount = 0
     private val acArray: Array<Entity?> = Array(MAX_RL_AIRCRAFT) { null }
+    private val acSpawnTime: Array<Float> = Array(MAX_RL_AIRCRAFT) { -1f }
     private val acStates: GdxArrayMap<String, AIState> = GdxArrayMap()
     private val assignedStack: GdxArrayMap<String, HoldStack> = GdxArrayMap()
 
@@ -126,6 +132,9 @@ class HoldAndDispatch(
             targetLocPoint.y - MathUtils.cosDeg(targetAppTrack - offsetAngle) * distPx,
             5000, 353, 5, CommandTarget.TURN_RIGHT, "ILS-02L-RIGHT-HOLD", holdAltInterval
         ))
+
+        arrivalSpawnController.reset(gs)
+        reset()
     }
 
     override fun getEpisodeSpawnCount(): Int {
@@ -140,9 +149,14 @@ class HoldAndDispatch(
         val acIndex = acArray.indexOf(aircraft)
         val callsign = aircraft[AircraftInfo.mapper]?.icaoCallsign!!
         if (acIndex == -1) {
-            throw IllegalStateException("$callsign not found")
+            throw IllegalStateException("$callsign not found at step $episodeStepCounter")
         }
+        CsvWriter.writeAgentLifespan(
+            episodeCounter, aircraft[SpawnGroup.mapper]!!.spawnGroup,
+            timePassed - acSpawnTime[acIndex]
+        )
         acArray[acIndex] = null
+        acSpawnTime[acIndex] = -1f
         acStates.removeKey(callsign)
         assignedStack.removeKey(callsign)
     }
@@ -156,27 +170,39 @@ class HoldAndDispatch(
         holdingTimeQueue.clear()
         acStates.clear()
         assignedStack.clear()
+        lastDispatchedInfo = null
+        timePassed = 0f
         for (stack in holdingStacks) stack.reset()
-        for (i in 0 until acArray.size) acArray[i] = null
+        for (i in acArray.indices) acArray[i] = null
+        for (i in acSpawnTime.indices) acSpawnTime[i] = -1f
     }
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit) {
-        val randomDone = (aircraft.isEmpty || episodeStepCounter >= 600) && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL
+        val randomDone = (aircraft.isEmpty || episodeStepCounter >= 1000) && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL && arrivalSpawnController.doneSpawning
         val scriptedDone = (aircraft.isEmpty || episodeStepCounter >= 8900) && arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.SCRIPTED && arrivalSpawnController.doneSpawning
 
         if (randomDone || scriptedDone) {
+            if (!aircraft.isEmpty) {
+                println("Warning: ${aircraft.size} remained at time of reset")
+                startLogging = true
+            }
+
             arrivalSpawnController.reset(gs)
             reset()
 
             if (episodeCounter % 10 == 0 && episodeCounter > 0) println("Finished episode $episodeCounter")
 
-            val randomEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL && episodeCounter >= 1024
+            val randomEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.RANDOM_RL && episodeCounter >= EPISODE_COUNT
             val scriptedEnd = arrivalSpawnController.policy == ArrivalsToControlSpawner.Policy.SCRIPTED && episodeCounter >= 1
 
             if (randomEnd || scriptedEnd) {
                 stopServer()
                 return
             }
+        }
+
+        lastDispatchedInfo?.lastAc?.let {
+            if (it.has(LocalizerCaptured.mapper)) lastDispatchedInfo?.lastAc = null
         }
 
         var holdCountChanged = false
@@ -188,7 +214,9 @@ class HoldAndDispatch(
             // New aircraft, no state
             if (!acStates.containsKey(callsign)) {
                 // Add to entity array
-                acArray[acArray.indexOf(null)] = ac.entity
+                val newIndex = acArray.indexOf(null)
+                acArray[newIndex] = ac.entity
+                acSpawnTime[newIndex] = timePassed
 
                 val latestClearance = getLatestClearanceState(ac.entity)!!
                 if (latestClearance.route.size >= 2) {
@@ -290,18 +318,24 @@ class HoldAndDispatch(
             val groundTrack = ac.entity[GroundTrack.mapper]!!.trackVectorPxps
             val estimatedTravelDistPx = calculateDistanceToPointWithTurn(acPos.x, acPos.y, targetLocPoint.x, targetLocPoint.y, groundTrack, turnRate, groundTrack.len())
             val followerInfo = ac.entity[AircraftInfo.mapper]!!
-//            var dispatchLog: DispatchLog? = null
+            var dispatchLog: DispatchLog? = null
             val dispatch = lastDispatchedInfo?.let { (lastAc, leaderWake, leaderRecat, leaderAppSpd, lastDispatchTime, lastTravelledDistPx) ->
-                // Position component may be null if the aircraft entity has already landed and despawned, hence the ?.
-                lastAc.entity[Position.mapper]?.also { lastDispatchedPos ->
+                lastAc?.also { lastEntity ->
+                    val lastDispatchedPos = lastEntity[Position.mapper]!!
                     // Ensure at least 2nm spacing between this and previously dispatched aircraft before dispatching next
-                    if (calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, acPos.x, acPos.y) <= nmToPx(2.5f)) return@let false
+                    if (calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, acPos.x, acPos.y) <= nmToPx(2.5f)) {
+//                        println("Positions: $lastDispatchedPos, $acPos")
+                        return@let false
+                    }
                     // Ensure previous dispatched aircraft has already turned towards the LOC before dispatching next
                     if (abs(findDeltaHeading(
-                            convertWorldAndRenderDeg(lastAc.entity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
+                            convertWorldAndRenderDeg(lastEntity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
                             getRequiredTrack(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y),
                             CommandTarget.TURN_DEFAULT
-                        )) > 30) return@let false
+                        )) > 30) {
+//                        println("Prev track: ${convertWorldAndRenderDeg(lastEntity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg())}")
+                        return@let false
+                    }
                 }
                 val minimumDispatchDistNmRequired = max(WakeMatrix.getDistanceRequired(
                     leaderWake, leaderRecat,
@@ -314,17 +348,18 @@ class HoldAndDispatch(
                 } * 3600
                 val holdToLocDistTimeAdjustmentS = pxToNm(lastTravelledDistPx - estimatedTravelDistPx) / 220 * 3600
                 val timeFromLastDispatch = additionalTimeS + holdToLocDistTimeAdjustmentS + timeSpacingBufferS
-//                dispatchLog = DispatchLog(
-//                    followerInfo.icaoCallsign, minimumDispatchDistNmRequired, leaderAppSpd,
-//                    followerInfo.aircraftPerf.appSpd, lastTravelledDistPx, estimatedTravelDistPx,
-//                    lastDispatchTime, additionalTimeS, holdToLocDistTimeAdjustmentS
-//                )
+                dispatchLog = DispatchLog(
+                    followerInfo.icaoCallsign, minimumDispatchDistNmRequired, leaderAppSpd,
+                    followerInfo.aircraftPerf.appSpd, lastTravelledDistPx, estimatedTravelDistPx,
+                    lastDispatchTime, additionalTimeS, holdToLocDistTimeAdjustmentS
+                )
+                if (startLogging) println("$timePassed Testing $dispatchLog")
                 timePassed >= (lastDispatchTime + timeFromLastDispatch)
             } ?: true
 
             holdCountChanged = holdCountChanged || dispatch
             if (dispatch) {
-//                println("Dispatching at time $timePassed\n$dispatchLog")
+                if (startLogging) println("Dispatching at time $timePassed\n$dispatchLog")
                 val latestClearance = getLatestClearanceState(ac.entity)!!
                 val newClearance = latestClearance.copy(route = Route().apply { setToRouteCopy(targetApp.routeLegs) }, clearedAlt = 3500, clearedApp = "ILS 02L", clearedTrans = "vectors")
                 addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
@@ -332,7 +367,7 @@ class HoldAndDispatch(
                 nextStackToDispatchFrom.clearAllHoldingAircraftDownwards()
                 nextStackToDispatchFrom.clearAllPendingEnterAircraftDownwards()
                 lastDispatchedInfo = LastDispatchInfo(
-                    ac, followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat,
+                    ac.entity, followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat,
                     followerInfo.aircraftPerf.appSpd, timePassed, estimatedTravelDistPx
                 )
                 acStates[ac.entity[AircraftInfo.mapper]!!.icaoCallsign] = AIState.EXITED_HOLD
@@ -350,6 +385,7 @@ class HoldAndDispatch(
         }
 
         timePassed += deltaTime
+//        startLogging = startLogging || (timePassed > 1048570)
 
         stepCountdown--
         if (stepCountdown < 0) {
@@ -399,12 +435,12 @@ class HoldAndDispatch(
 
         val holdingTime = holdingTimeQueue.average().toFloat()
 
-        CsvWriter.writeToAverageHoldingTime(timePassed, holdingTime)
-        CsvWriter.writeToIndividualHoldTime(holdingTime)
+        CsvWriter.writeToAverageHoldingTime(episodeCounter, timePassed, holdingTime)
+        CsvWriter.writeToIndividualHoldTime(episodeCounter, holdingTime)
     }
 
     private fun updateHoldingCountStatistics(newHoldCount: Int) {
-        CsvWriter.writeToHoldingCount(timePassed, newHoldCount.toFloat())
+        CsvWriter.writeToHoldingCount(episodeCounter, timePassed, newHoldCount.toFloat())
     }
 
     fun calculateDistanceToPointWithTurn(posX: Float, posY: Float, destX: Float, destY: Float, dir: Vector2, maxTurnRateDegPerS: Float, gsPxps: Float): Float {

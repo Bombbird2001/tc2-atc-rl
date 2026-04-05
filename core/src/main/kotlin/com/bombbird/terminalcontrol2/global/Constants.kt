@@ -236,3 +236,4 @@ const val MAX_SPAWN_DIST_NM = 60
 const val MIN_SPAWN_DIST_NM = 5
 
 const val BASELINE_INITIAL_SPD: Short = 250
+const val EPISODE_COUNT = 1024

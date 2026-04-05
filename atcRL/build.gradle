@@ -50,8 +50,9 @@ run {
 }
 
 jar {
+	def jarName = 'build-baseline-v4-max-250.jar'
 // sets the name of the .jar file this produces to the name of the game or app.
-	archiveFileName.set('build-baseline-v4-max-250.jar')
+	archiveFileName.set(jarName)
 // the duplicatesStrategy matters starting in Gradle 7.0; this setting works.
 	duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
 	dependsOn(configurations.runtimeClasspath, 'checkVersion')
@@ -69,6 +70,7 @@ jar {
 	doLast {
 		file(archiveFile).setExecutable(true, false)
 	}
+	println("Built ${jarName}")
 }
 
 // Equivalent to the jar task; here for compatibility with gdx-setup.

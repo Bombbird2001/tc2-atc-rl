@@ -320,23 +320,23 @@ class HoldAndDispatch(
             val followerInfo = ac.entity[AircraftInfo.mapper]!!
             var dispatchLog: DispatchLog? = null
             val dispatch = lastDispatchedInfo?.let { (lastAc, leaderWake, leaderRecat, leaderAppSpd, lastDispatchTime, lastTravelledDistPx) ->
-                lastAc?.also { lastEntity ->
-                    val lastDispatchedPos = lastEntity[Position.mapper]!!
-                    // Ensure at least 2nm spacing between this and previously dispatched aircraft before dispatching next
-                    if (calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, acPos.x, acPos.y) <= nmToPx(2.5f)) {
-//                        println("Positions: $lastDispatchedPos, $acPos")
-                        return@let false
-                    }
-                    // Ensure previous dispatched aircraft has already turned towards the LOC before dispatching next
-                    if (abs(findDeltaHeading(
-                            convertWorldAndRenderDeg(lastEntity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
-                            getRequiredTrack(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y),
-                            CommandTarget.TURN_DEFAULT
-                        )) > 30) {
-//                        println("Prev track: ${convertWorldAndRenderDeg(lastEntity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg())}")
-                        return@let false
-                    }
-                }
+//                lastAc?.also { lastEntity ->
+//                    val lastDispatchedPos = lastEntity[Position.mapper]!!
+//                    // Ensure at least 2nm spacing between this and previously dispatched aircraft before dispatching next
+//                    if (calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, acPos.x, acPos.y) <= nmToPx(2.5f)) {
+////                        println("Positions: $lastDispatchedPos, $acPos")
+//                        return@let false
+//                    }
+//                    // Ensure previous dispatched aircraft has already turned towards the LOC before dispatching next
+//                    if (abs(findDeltaHeading(
+//                            convertWorldAndRenderDeg(lastEntity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
+//                            getRequiredTrack(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y),
+//                            CommandTarget.TURN_DEFAULT
+//                        )) > 30) {
+////                        println("Prev track: ${convertWorldAndRenderDeg(lastEntity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg())}")
+//                        return@let false
+//                    }
+//                }
                 val minimumDispatchDistNmRequired = max(WakeMatrix.getDistanceRequired(
                     leaderWake, leaderRecat,
                     followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat

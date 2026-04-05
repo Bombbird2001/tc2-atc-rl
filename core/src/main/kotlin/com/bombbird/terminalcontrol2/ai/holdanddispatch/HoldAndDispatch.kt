@@ -14,7 +14,6 @@ import com.bombbird.terminalcontrol2.components.ClearanceAct
 import com.bombbird.terminalcontrol2.components.CommandTarget
 import com.bombbird.terminalcontrol2.components.Direction
 import com.bombbird.terminalcontrol2.components.GroundTrack
-import com.bombbird.terminalcontrol2.components.LocalizerCaptured
 import com.bombbird.terminalcontrol2.components.Position
 import com.bombbird.terminalcontrol2.components.Speed
 import com.bombbird.terminalcontrol2.entities.Aircraft
@@ -46,8 +45,8 @@ import com.bombbird.terminalcontrol2.utilities.findDeltaHeading
 import com.bombbird.terminalcontrol2.utilities.getLatestClearanceState
 import com.bombbird.terminalcontrol2.utilities.getRequiredTrack
 import com.bombbird.terminalcontrol2.utilities.nmToPx
+import com.bombbird.terminalcontrol2.utilities.pxToNm
 import ktx.ashley.get
-import ktx.ashley.has
 import ktx.collections.GdxArray
 import ktx.collections.GdxArrayMap
 import ktx.collections.set
@@ -75,12 +74,23 @@ class HoldAndDispatch(
     private var episodeStepCounter = 0
     private val rewardHandler = RewardHandler(conflictManager, rlConfig)
 
+    private data class LastDispatchInfo(
+        val lastAc: Aircraft, val wakeType: Char, val recatType: Char, val appSpd: Short,
+        val dispatchTime: Float, val holdToLocDistPx: Float
+    )
+
+    private data class DispatchLog(
+        val callSign: String, val minSep: Float, val leaderSpd: Short, val followedSpd: Short,
+        val lastTravelledDist: Float, val currTravelledDist: Float, val lastDispatchTime: Float,
+        val additionalTime: Float, val holdToLocDistTimeAdjustmentS: Float
+    )
+
     val holdingStacks: GdxArray<HoldStack> = GdxArray()
     private val distNmFromFAF = 10
     private val offsetAngle = 30
-    private val dispatchSpacingBufferNm = 0.5f
+    private val timeSpacingBufferS = 40
     private val holdAltInterval = 2000
-    private var lastDispatchedAircraft: Aircraft? = null
+    private var lastDispatchedInfo: LastDispatchInfo? = null
     private lateinit var targetLocPoint: Position
     private lateinit var targetApp: Approach
 
@@ -259,10 +269,6 @@ class HoldAndDispatch(
             }
         }
 
-        lastDispatchedAircraft?.let {
-            if (it.entity.has(LocalizerCaptured.mapper)) lastDispatchedAircraft = null
-        }
-
         var nextStackToDispatchFrom: HoldStack? = null
         var lowestEntryTime = Float.MAX_VALUE
         for (holdStack in holdingStacks) {
@@ -278,45 +284,57 @@ class HoldAndDispatch(
 
         if (nextStackToDispatchFrom != null) {
             val ac = nextStackToDispatchFrom.getFirstInHoldAircraft()!!.aircraft
-            val dispatch = lastDispatchedAircraft?.let {
-                val acPos = ac.entity[Position.mapper]!!
-                val altitude = ac.entity[Altitude.mapper]!!.altitudeFt
-                val turnRate = if (calculateIASFromTAS(altitude, ac.entity[Speed.mapper]!!.speedKts) > HALF_TURN_RATE_THRESHOLD_IAS) MAX_HIGH_SPD_ANGULAR_SPD else MAX_LOW_SPD_ANGULAR_SPD
-                val groundTrack = ac.entity[GroundTrack.mapper]!!.trackVectorPxps
-                val estimatedTravelDistPx = calculateDistanceToPointWithTurn(acPos.x, acPos.y, targetLocPoint.x, targetLocPoint.y, groundTrack, turnRate, groundTrack.len())
-                val lastDispatchedPos = it.entity[Position.mapper]!!
-                // Ensure at least 2nm spacing between this and previously dispatched aircraft before dispatching next
-                if (calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, acPos.x, acPos.y) <= nmToPx(2.5f)) return@let false
-                // Ensure previous dispatched aircraft has already turned towards the LOC before dispatching next
-                if (abs(findDeltaHeading(
-                        convertWorldAndRenderDeg(it.entity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
-                        getRequiredTrack(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y),
-                        CommandTarget.TURN_DEFAULT
-                )) > 30) return@let false
-                val lastDispatchedPx = calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y)
-                val leaderInfo = it.entity[AircraftInfo.mapper]!!
-                val followerInfo = ac.entity[AircraftInfo.mapper]!!
+            val altitude = ac.entity[Altitude.mapper]!!.altitudeFt
+            val acPos = ac.entity[Position.mapper]!!
+            val turnRate = if (calculateIASFromTAS(altitude, ac.entity[Speed.mapper]!!.speedKts) > HALF_TURN_RATE_THRESHOLD_IAS) MAX_HIGH_SPD_ANGULAR_SPD else MAX_LOW_SPD_ANGULAR_SPD
+            val groundTrack = ac.entity[GroundTrack.mapper]!!.trackVectorPxps
+            val estimatedTravelDistPx = calculateDistanceToPointWithTurn(acPos.x, acPos.y, targetLocPoint.x, targetLocPoint.y, groundTrack, turnRate, groundTrack.len())
+            val followerInfo = ac.entity[AircraftInfo.mapper]!!
+//            var dispatchLog: DispatchLog? = null
+            val dispatch = lastDispatchedInfo?.let { (lastAc, leaderWake, leaderRecat, leaderAppSpd, lastDispatchTime, lastTravelledDistPx) ->
+                // Position component may be null if the aircraft entity has already landed and despawned, hence the ?.
+                lastAc.entity[Position.mapper]?.also { lastDispatchedPos ->
+                    // Ensure at least 2nm spacing between this and previously dispatched aircraft before dispatching next
+                    if (calculateDistanceBetweenPoints(lastDispatchedPos.x, lastDispatchedPos.y, acPos.x, acPos.y) <= nmToPx(2.5f)) return@let false
+                    // Ensure previous dispatched aircraft has already turned towards the LOC before dispatching next
+                    if (abs(findDeltaHeading(
+                            convertWorldAndRenderDeg(lastAc.entity[GroundTrack.mapper]!!.trackVectorPxps.angleDeg()),
+                            getRequiredTrack(lastDispatchedPos.x, lastDispatchedPos.y, targetLocPoint.x, targetLocPoint.y),
+                            CommandTarget.TURN_DEFAULT
+                        )) > 30) return@let false
+                }
                 val minimumDispatchDistNmRequired = max(WakeMatrix.getDistanceRequired(
-                    leaderInfo.aircraftPerf.wakeCategory, leaderInfo.aircraftPerf.recat,
+                    leaderWake, leaderRecat,
                     followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat
                 ).toFloat(), 2.5f)
-                val additionalSpacingNm = 6.4f * (195 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
-                        max(0f, minimumDispatchDistNmRequired - 6.4f) * (200 - leaderInfo.aircraftPerf.appSpd) / leaderInfo.aircraftPerf.appSpd +
-                        (if (minimumDispatchDistNmRequired < 2.6f) -0.5f else 0f)
-                        4.4f * 30 / 190 +
-                        dispatchSpacingBufferNm
-                (estimatedTravelDistPx - lastDispatchedPx) >= nmToPx(minimumDispatchDistNmRequired + additionalSpacingNm)
+                val additionalTimeS = if (minimumDispatchDistNmRequired <= 4) {
+                    minimumDispatchDistNmRequired / leaderAppSpd + (4 - minimumDispatchDistNmRequired) * (1 / leaderAppSpd - 1 / max(leaderAppSpd.toInt(), followerInfo.aircraftPerf.appSpd.toInt()))
+                } else {
+                    4f / leaderAppSpd + (minimumDispatchDistNmRequired - 4) / 150
+                } * 3600
+                val holdToLocDistTimeAdjustmentS = pxToNm(lastTravelledDistPx - estimatedTravelDistPx) / 220 * 3600
+                val timeFromLastDispatch = additionalTimeS + holdToLocDistTimeAdjustmentS + timeSpacingBufferS
+//                dispatchLog = DispatchLog(
+//                    followerInfo.icaoCallsign, minimumDispatchDistNmRequired, leaderAppSpd,
+//                    followerInfo.aircraftPerf.appSpd, lastTravelledDistPx, estimatedTravelDistPx,
+//                    lastDispatchTime, additionalTimeS, holdToLocDistTimeAdjustmentS
+//                )
+                timePassed >= (lastDispatchTime + timeFromLastDispatch)
             } ?: true
 
             holdCountChanged = holdCountChanged || dispatch
             if (dispatch) {
+//                println("Dispatching at time $timePassed\n$dispatchLog")
                 val latestClearance = getLatestClearanceState(ac.entity)!!
                 val newClearance = latestClearance.copy(route = Route().apply { setToRouteCopy(targetApp.routeLegs) }, clearedAlt = 3500, clearedApp = "ILS 02L", clearedTrans = "vectors")
                 addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
                 val holdInfo = nextStackToDispatchFrom.removeFirstInHoldAircraft()
                 nextStackToDispatchFrom.clearAllHoldingAircraftDownwards()
                 nextStackToDispatchFrom.clearAllPendingEnterAircraftDownwards()
-                lastDispatchedAircraft = ac
+                lastDispatchedInfo = LastDispatchInfo(
+                    ac, followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat,
+                    followerInfo.aircraftPerf.appSpd, timePassed, estimatedTravelDistPx
+                )
                 acStates[ac.entity[AircraftInfo.mapper]!!.icaoCallsign] = AIState.EXITED_HOLD
                 updateHoldingTimeStatistics(timePassed - holdInfo.timeEnteredHold)
             }

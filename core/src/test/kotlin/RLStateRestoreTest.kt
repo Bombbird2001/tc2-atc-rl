@@ -35,7 +35,6 @@ import ktx.ashley.remove
  * Covers: component persistence, spawn/despawn semantics, wake turbulence restore.
  */
 object RLStateRestoreTest : FunSpec() {
-
     init {
         testInitialiseGameAndServer()
 
@@ -73,6 +72,8 @@ object RLStateRestoreTest : FunSpec() {
             ac.entity[FlightType.mapper]!!.type = FlightType.DEPARTURE
             ac.entity[ClearanceAct.mapper]!!.actingClearance.clearanceState.clearedAlt = 15000
             ac.entity[SpawnGroup.mapper]!!.spawnGroup = 1
+            ac.entity[SpawnGroup.mapper]!!.spawnX = 2f
+            ac.entity[SpawnGroup.mapper]!!.spawnY = 2f
             restoreSnapshot(snapshot, gs)
             (ac.entity[Position.mapper]!!.x) shouldBe 150f
             (ac.entity[Position.mapper]!!.y) shouldBe 250f
@@ -90,6 +91,8 @@ object RLStateRestoreTest : FunSpec() {
             (ac.entity[Acceleration.mapper]!!.dAngularSpdDps2) shouldBe 3f
             (ac.entity[FlightType.mapper]!!.type) shouldBe FlightType.EN_ROUTE
             (ac.entity[SpawnGroup.mapper]!!.spawnGroup) shouldBe 0
+            (ac.entity[SpawnGroup.mapper]!!.spawnX) shouldBe 1f
+            (ac.entity[SpawnGroup.mapper]!!.spawnY) shouldBe 1f
         }
 
         test("Clearance state (clearedAlt, clearedIas, vectorHdg, expedite) is restored correctly") {
@@ -635,7 +638,7 @@ object RLStateRestoreTest : FunSpec() {
     private fun addTestAircraft(gs: GameServer, callsign: String, x: Float, y: Float, alt: Float): Aircraft {
         val ac = Aircraft(callsign, x, y, alt, "B738", FlightType.ARRIVAL, false)
         ac.entity.plusAssign(ClearanceAct(ClearanceState().ActingClearance()))
-        ac.entity.plusAssign(SpawnGroup(0))
+        ac.entity.plusAssign(SpawnGroup(0, 1f, 1f))
         gs.aircraft.put(callsign, ac)
         return ac
     }

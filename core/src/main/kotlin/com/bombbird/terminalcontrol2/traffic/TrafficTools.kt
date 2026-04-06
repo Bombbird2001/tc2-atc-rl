@@ -325,7 +325,7 @@ private fun finishArrivalEntitySetup(
         if (alt > 10000) entity += DecelerateTo240kts()
         entity += ContactFromCentre(MAX_ALT + MathUtils.random(400, 1500))
         initialiseArrivalRequests(entity)
-        entity += SpawnGroup(spawnGroup)
+        entity += SpawnGroup(spawnGroup, xPx, yPx)
     }
     gs.sendAircraftSpawn(ac)
 }

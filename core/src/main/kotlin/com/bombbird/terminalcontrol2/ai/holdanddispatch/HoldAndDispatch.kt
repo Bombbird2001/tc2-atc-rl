@@ -151,8 +151,9 @@ class HoldAndDispatch(
         if (acIndex == -1) {
             throw IllegalStateException("$callsign not found at step $episodeStepCounter")
         }
+        val spawnInfo = aircraft[SpawnGroup.mapper]!!
         CsvWriter.writeAgentLifespan(
-            episodeCounter, aircraft[SpawnGroup.mapper]!!.spawnGroup,
+            episodeCounter, timePassed, spawnInfo.spawnGroup, spawnInfo.spawnX, spawnInfo.spawnY,
             timePassed - acSpawnTime[acIndex]
         )
         acArray[acIndex] = null

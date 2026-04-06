@@ -17,7 +17,7 @@ import ktx.collections.set
 import ktx.collections.sortBy
 import kotlin.math.max
 
-class AircraftHold(val aircraft: Aircraft, val timeEnteredHold: Float)
+class AircraftHold(val aircraft: Aircraft, val timeEnteredHold: Double)
 
 class HoldStack(
     posX: Float, posY: Float, val minAlt: Int, private val inboundHdg: Short,
@@ -81,7 +81,7 @@ class HoldStack(
         }
     }
 
-    fun addAircraftToHold(aircraft: Aircraft, timeEnteredHold: Float) {
+    fun addAircraftToHold(aircraft: Aircraft, timeEnteredHold: Double) {
         inHoldStack.add(AircraftHold(aircraft, timeEnteredHold))
     }
 

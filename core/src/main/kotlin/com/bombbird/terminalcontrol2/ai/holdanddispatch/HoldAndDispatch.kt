@@ -68,7 +68,7 @@ class HoldAndDispatch(
     private val arrivalSpawnController: ArrivalsToControlSpawner,
 ): Agent {
     companion object {
-        var timePassed = 0f
+        var timePassed = 0.0
 
         const val STEP_INTERVAL = 10 * 30
     }
@@ -80,12 +80,12 @@ class HoldAndDispatch(
 
     private data class LastDispatchInfo(
         var lastAc: Entity?, val wakeType: Char, val recatType: Char, val appSpd: Short,
-        val dispatchTime: Float, val holdToLocDistPx: Float
+        val dispatchTime: Double, val holdToLocDistPx: Float
     )
 
     private data class DispatchLog(
         val callSign: String, val minSep: Float, val leaderSpd: Short, val followedSpd: Short,
-        val lastTravelledDist: Float, val currTravelledDist: Float, val lastDispatchTime: Float,
+        val lastTravelledDist: Float, val currTravelledDist: Float, val lastDispatchTime: Double,
         val additionalTime: Float, val holdToLocDistTimeAdjustmentS: Float
     )
     private var startLogging = false
@@ -109,11 +109,11 @@ class HoldAndDispatch(
 
     private var spawnCount = 0
     private val acArray: Array<Entity?> = Array(MAX_RL_AIRCRAFT) { null }
-    private val acSpawnTime: Array<Float> = Array(MAX_RL_AIRCRAFT) { -1f }
+    private val acSpawnTime: Array<Double> = Array(MAX_RL_AIRCRAFT) { -1.0 }
     private val acStates: GdxArrayMap<String, AIState> = GdxArrayMap()
     private val assignedStack: GdxArrayMap<String, HoldStack> = GdxArrayMap()
 
-    private var holdingTimeQueue = Queue<Float>()
+    private var holdingTimeQueue = Queue<Double>()
 
     override fun init() {
         targetLocPoint = gs.waypoints[gs.updatedWaypointMapping["MENNU"]]!!.entity[Position.mapper]!!
@@ -157,7 +157,7 @@ class HoldAndDispatch(
             spawnInfo.spawnOrder, timePassed - acSpawnTime[acIndex]
         )
         acArray[acIndex] = null
-        acSpawnTime[acIndex] = -1f
+        acSpawnTime[acIndex] = -1.0
         acStates.removeKey(callsign)
         assignedStack.removeKey(callsign)
     }
@@ -172,10 +172,10 @@ class HoldAndDispatch(
         acStates.clear()
         assignedStack.clear()
         lastDispatchedInfo = null
-        timePassed = 0f
+        timePassed = 0.0
         for (stack in holdingStacks) stack.reset()
         for (i in acArray.indices) acArray[i] = null
-        for (i in acSpawnTime.indices) acSpawnTime[i] = -1f
+        for (i in acSpawnTime.indices) acSpawnTime[i] = -1.0
     }
 
     override fun update(aircraft: GdxArrayMap<String, Aircraft>, deltaTime: Float, stopServer: () -> Unit) {
@@ -299,7 +299,7 @@ class HoldAndDispatch(
         }
 
         var nextStackToDispatchFrom: HoldStack? = null
-        var lowestEntryTime = Float.MAX_VALUE
+        var lowestEntryTime = Double.MAX_VALUE
         for (holdStack in holdingStacks) {
             holdStack.sortHoldAircraftByClearedAlt()
             val firstAc = holdStack.getFirstInHoldAircraft() ?: continue
@@ -429,7 +429,7 @@ class HoldAndDispatch(
         }
     }
 
-    private fun updateHoldingTimeStatistics(newHoldingTime: Float) {
+    private fun updateHoldingTimeStatistics(newHoldingTime: Double) {
         holdingTimeQueue.addLast(newHoldingTime)
 
         if (holdingTimeQueue.size > 30) holdingTimeQueue.removeFirst()

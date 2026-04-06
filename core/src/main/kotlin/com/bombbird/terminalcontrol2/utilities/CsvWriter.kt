@@ -25,7 +25,7 @@ object CsvWriter {
         return RUN_DIR?.isNotBlank() ?: false
     }
 
-    fun writeToAverageHoldingTime(episode: Int, currTime: Float, holdingTime: Float) {
+    fun writeToAverageHoldingTime(episode: Int, currTime: Double, holdingTime: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + AVG_HOLD_TIME_FILE,
@@ -34,7 +34,7 @@ object CsvWriter {
         )
     }
 
-    fun writeToHoldingCount(episode: Int, currTime: Float, holdingCount: Float) {
+    fun writeToHoldingCount(episode: Int, currTime: Double, holdingCount: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + HOLD_COUNT_FILE,
@@ -52,7 +52,7 @@ object CsvWriter {
         )
     }
 
-    fun writeToWakeConflict(currTime: Float, conflicts: Float) {
+    fun writeToWakeConflict(currTime: Double, conflicts: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + WAKE_CONFLICT_FILE,
@@ -61,7 +61,7 @@ object CsvWriter {
         )
     }
 
-    fun writeToConflict(currTime: Float, conflicts: Float) {
+    fun writeToConflict(currTime: Double, conflicts: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + CONFLICT_FILE,
@@ -70,7 +70,7 @@ object CsvWriter {
         )
     }
 
-    fun writeToMvaConflict(currTime: Float, conflicts: Float) {
+    fun writeToMvaConflict(currTime: Double, conflicts: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + MVA_CONFLICT_FILE,
@@ -79,7 +79,7 @@ object CsvWriter {
         )
     }
 
-    fun writeToArrivalRate(currTime: Float, arriveRate: Float) {
+    fun writeToArrivalRate(currTime: Double, arriveRate: Float) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + ARRIVAL_RATE_FILE,
@@ -103,7 +103,7 @@ object CsvWriter {
     }
 
     fun writeAgentLifespan(
-        episode: Int, timePassed: Float, agentGroup: Byte, spawnX: Float, spawnY: Float, spawnOrder: Int, lifespanS: Float
+        episode: Int, timePassed: Double, agentGroup: Byte, spawnX: Float, spawnY: Float, spawnOrder: Int, lifespanS: Double
     ) {
         if (!checkRunDir()) return
         writeToCsv(

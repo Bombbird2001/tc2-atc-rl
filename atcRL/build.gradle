@@ -50,8 +50,9 @@ run {
 }
 
 jar {
+	def jarName = 'build-scripted-spawn-v3.jar'
 // sets the name of the .jar file this produces to the name of the game or app.
-	archiveFileName.set('build-scripted-spawn-v2.jar')
+	archiveFileName.set(jarName)
 // the duplicatesStrategy matters starting in Gradle 7.0; this setting works.
 	duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
 	dependsOn(configurations.runtimeClasspath, 'checkVersion')
@@ -68,6 +69,7 @@ jar {
 // this last step may help on some OSes that need extra instruction to make runnable JARs.
 	doLast {
 		file(archiveFile).setExecutable(true, false)
+        println("Built ${jarName}")
 	}
 }
 

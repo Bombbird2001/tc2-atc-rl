@@ -120,6 +120,7 @@ private fun buildAircraftSnapshotData(e: Entity): AircraftSnapshotData {
     val arptId = approachInfo?.airportId
     val appName = approachInfo?.approachName
     val rwyId = approachInfo?.rwyId
+    val spawnInfo = e[SpawnGroup.mapper]!!
     return AircraftSnapshotData(
         position = Position(pos.x, pos.y),
         altitude = Altitude(alt.altitudeFt),
@@ -156,6 +157,8 @@ private fun buildAircraftSnapshotData(e: Entity): AircraftSnapshotData {
         hasDecelerateTo240kts = e.has(DecelerateTo240kts.mapper),
         hasAppDecelerateTo190kts = e.has(AppDecelerateTo190kts.mapper),
         hasDecelerateToAppSpd = e.has(DecelerateToAppSpd.mapper),
-        spawnGroup = e[SpawnGroup.mapper]!!.spawnGroup
+        spawnGroup = spawnInfo.spawnGroup,
+        spawnX = spawnInfo.spawnX,
+        spawnY = spawnInfo.spawnY,
     )
 }

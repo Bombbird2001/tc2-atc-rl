@@ -230,7 +230,8 @@ private fun applyAircraftSnapshotData(e: Entity, data: AircraftSnapshotData) {
         spawnGroup = data.spawnGroup
         spawnX = data.spawnX
         spawnY = data.spawnY
-    } ?: e.plusAssign(SpawnGroup(data.spawnGroup, data.spawnX, data.spawnY))
+        spawnOrder = data.spawnOrder
+    } ?: e.plusAssign(SpawnGroup(data.spawnGroup, data.spawnX, data.spawnY, data.spawnOrder))
 }
 
 private fun resolveApproachRefs(e: Entity, data: AircraftSnapshotData) {

@@ -203,14 +203,14 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     } else {
         calculateArrivalSpawnAltitude(ac.entity, airport, origStarRoute, spawnPos.first, spawnPos.second, starRoute)
     }
-    finishArrivalEntitySetup(ac, airport, gs, spawnPos.first, spawnPos.second, spawnPos.third, rawAlt, spawnGroup, disableAmendAltForNearbyTraffic = false)
+    finishArrivalEntitySetup(ac, airport, gs, spawnPos.first, spawnPos.second, spawnPos.third, rawAlt, spawnGroup, -1, disableAmendAltForNearbyTraffic = false)
 }
 
 private val spawnGroupPos = arrayOf(
     173.0f to 996.5f,
     965.9704f to -287.3346f,
     -823.157f to -577.0513f,
-    -823.157f to -577.0513f,
+    -99999f to -99999f,
     -31.541626f to -1009.12244f
 )
 private fun computeSpawnGroup(spawnX: Float, spawnY: Float): Byte {
@@ -230,6 +230,7 @@ fun createArrival(
     gs: GameServer,
     xPx: Float,
     yPx: Float,
+    spawnOrder: Int,
     altitudeFt: Float,
     trackDeg: Float,
     disableAmendAltForNearbyTraffic: Boolean = false
@@ -241,7 +242,7 @@ fun createArrival(
     val newAc = Aircraft(callsign, xPx, yPx, 0f, icaoType, FlightType.ARRIVAL, false)
     gs.aircraft.put(callsign, newAc)
     newAc.entity += ArrivalAirport(airport[AirportInfo.mapper]?.arptId ?: 0)
-    finishArrivalEntitySetup(newAc, airport, gs, xPx, yPx, trackDeg + 180, altitudeFt, computeSpawnGroup(xPx, yPx), disableAmendAltForNearbyTraffic)
+    finishArrivalEntitySetup(newAc, airport, gs, xPx, yPx, trackDeg + 180, altitudeFt, computeSpawnGroup(xPx, yPx), spawnOrder, disableAmendAltForNearbyTraffic)
 }
 
 private fun finishArrivalEntitySetup(
@@ -253,6 +254,7 @@ private fun finishArrivalEntitySetup(
     oppTrackDeg: Float,
     rawAltitudeFt: Float,
     spawnGroup: Byte,
+    spawnOrder: Int,
     disableAmendAltForNearbyTraffic: Boolean
 ) {
     ac.entity.also { entity ->
@@ -309,7 +311,7 @@ private fun finishArrivalEntitySetup(
         if (alt > 10000) entity += DecelerateTo240kts()
         entity += ContactFromCentre(MAX_ALT + MathUtils.random(400, 1500))
         initialiseArrivalRequests(entity)
-        entity += SpawnGroup(spawnGroup, xPx, yPx)
+        entity += SpawnGroup(spawnGroup, xPx, yPx, spawnOrder)
     }
     gs.sendAircraftSpawn(ac)
 }

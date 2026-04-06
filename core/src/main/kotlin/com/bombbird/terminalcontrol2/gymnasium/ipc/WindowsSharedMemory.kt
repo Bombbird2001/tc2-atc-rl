@@ -63,6 +63,10 @@ class WindowsSharedMemory(envId: String, fileSizeBytes: Int): SharedMemoryIPC {
         buffer.setByte(offset.toLong(), byte)
     }
 
+    override fun setShort(offset: Int, value: Short) {
+        buffer.setShort(offset.toLong(), value)
+    }
+
     override fun copyByteArray(offset: Int, source: ByteBuffer) {
         source.position(0)
         buffer.write(offset.toLong(), source.array(), 0, source.remaining())

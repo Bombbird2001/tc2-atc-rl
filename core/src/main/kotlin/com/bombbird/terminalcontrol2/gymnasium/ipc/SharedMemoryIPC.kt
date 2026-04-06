@@ -30,6 +30,8 @@ interface SharedMemoryIPC {
 
     fun setByte(offset: Int, byte: Byte)
 
+    fun setShort(offset: Int, value: Short)
+
     fun copyByteArray(offset: Int, source: ByteBuffer)
 
     fun setFloat(offset: Int, float: Float)

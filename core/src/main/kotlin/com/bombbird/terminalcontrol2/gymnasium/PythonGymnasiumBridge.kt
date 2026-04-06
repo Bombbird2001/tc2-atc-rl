@@ -118,7 +118,7 @@ class PythonGymnasiumBridge(
 
     private val baseSize = 4
     private val metricsHandler = MetricsHandler(baseSize)
-    private val metricsPadding = (8 - MAX_RL_AIRCRAFT % 8) % 8
+    private val metricsPadding = (8 - metricsHandler.size % 8) % 8
     private val constantSize = baseSize + metricsHandler.size + metricsPadding
     private val sizePerAircraft = 60
     private val sizePerInstruction = 6
@@ -748,9 +748,12 @@ class PythonGymnasiumBridge(
             if (slotToUse == -1) throw IllegalStateException("$envName: No free slots found")
             if (agentIdToAircraft[slotToUse] != null) throw IllegalStateException("$envName: Expected agent $aircraftAdded to be null before assignment")
             agentIdToAircraft[slotToUse] = ac
+            val spawnInfo = ac[SpawnGroup.mapper]!!
             metricsHandler.logToSharedMemory(  // Spawn group for each agent
-                MetricsHandler.AIRCRAFT_SPAWN_GROUP, slotToUse,
-                ac[SpawnGroup.mapper]?.spawnGroup!!
+                MetricsHandler.AIRCRAFT_SPAWN_GROUP, slotToUse,spawnInfo.spawnGroup
+            )
+            metricsHandler.logToSharedMemory(
+                MetricsHandler.AIRCRAFT_SPAWN_ORDER, slotToUse, spawnInfo.spawnOrder.toShort()
             )
             aircraftAdded++
             // FileLog.info("$envName PythonGymnasiumBridge", "Added ${ac[AircraftInfo.mapper]!!.icaoCallsign} in step $internalStep")

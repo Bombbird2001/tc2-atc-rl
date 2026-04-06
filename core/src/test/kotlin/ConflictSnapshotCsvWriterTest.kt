@@ -72,7 +72,7 @@ private fun addTestAircraft(gs: GameServer, callsign: String, x: Float, y: Float
     if (ac.entity[Acceleration.mapper] == null) ac.entity.add(Acceleration())
     if (ac.entity[WakeTolerance.mapper] == null) ac.entity.add(WakeTolerance())
     if (ac.entity[WakeTrail.mapper] == null) ac.entity.add(WakeTrail())
-    if (ac.entity[SpawnGroup.mapper] == null) ac.entity.add(SpawnGroup(0))
+    if (ac.entity[SpawnGroup.mapper] == null) ac.entity.add(SpawnGroup(0, 1f, 1f, 0))
     gs.aircraft.put(callsign, ac)
     return ac
 }

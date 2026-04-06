@@ -78,6 +78,10 @@ class MacOSSharedMemory(envId: String, private val fileSizeBytes: Long): SharedM
         buffer.put(offset, byte)
     }
 
+    override fun setShort(offset: Int, value: Short) {
+        buffer.putShort(offset, value)
+    }
+
     override fun copyByteArray(offset: Int, source: ByteBuffer) {
         source.position(0)
         buffer.position(offset)

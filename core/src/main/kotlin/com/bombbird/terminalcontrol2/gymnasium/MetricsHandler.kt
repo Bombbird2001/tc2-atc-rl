@@ -18,8 +18,10 @@ class MetricsHandler(private val metricOffsetStart: Int) {
         const val WAKE_CONFLICT_RATE_LOC_BEFORE_RES = 10
         const val CLEARANCE_CHANGE_RATE = 11
         const val AIRCRAFT_SPAWN_GROUP = 12
+        const val AIRCRAFT_SPAWN_ORDER = 13
 
         const val DEFAULT_METRIC_SIZE_BYTES = 4
+        const val SHORT_SIZE = 2
     }
 
     private val metricSizes = listOf(
@@ -36,6 +38,7 @@ class MetricsHandler(private val metricOffsetStart: Int) {
         WAKE_CONFLICT_RATE_LOC_BEFORE_RES to DEFAULT_METRIC_SIZE_BYTES,
         CLEARANCE_CHANGE_RATE to DEFAULT_METRIC_SIZE_BYTES,
         AIRCRAFT_SPAWN_GROUP to 1 * AIRCRAFT_TO_SPAWN,
+        AIRCRAFT_SPAWN_ORDER to 2 * AIRCRAFT_TO_SPAWN,
     )
 
     val size = metricSizes.sumOf { it.second }
@@ -69,6 +72,14 @@ class MetricsHandler(private val metricOffsetStart: Int) {
             throw IllegalArgumentException("Offset is too large; max offset is ${maxSize - 1}, got $offset")
         }
         sharedMemoryIPC.setByte(posStart + offset, value)
+    }
+
+    fun logToSharedMemory(metricId: Int, offset: Int, value: Short) {
+        val (_, posStart, maxSize) = metricOffsets.find { it.first == metricId } ?: throw IllegalArgumentException("No metric with ID $metricId")
+        if ((offset + 1) * SHORT_SIZE > maxSize) {
+            throw IllegalArgumentException("Offset is too large; max offset is ${maxSize / SHORT_SIZE - 1}, got $offset")
+        }
+        sharedMemoryIPC.setShort(posStart + offset * SHORT_SIZE, value)
     }
 
     fun logToSharedMemory(metricId: Int, value: Float) {

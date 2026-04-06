@@ -175,6 +175,7 @@ class ArrivalsToControlSpawner {
             gs,
             entry.xPx,
             entry.yPx,
+            scriptedNextIndex,
             entry.altitudeFt,
             entry.trackDeg,
             disableAmendAltForNearbyTraffic = true

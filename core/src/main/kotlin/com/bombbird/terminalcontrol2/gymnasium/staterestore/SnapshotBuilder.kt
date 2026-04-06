@@ -160,5 +160,6 @@ private fun buildAircraftSnapshotData(e: Entity): AircraftSnapshotData {
         spawnGroup = spawnInfo.spawnGroup,
         spawnX = spawnInfo.spawnX,
         spawnY = spawnInfo.spawnY,
+        spawnOrder = spawnInfo.spawnOrder,
     )
 }

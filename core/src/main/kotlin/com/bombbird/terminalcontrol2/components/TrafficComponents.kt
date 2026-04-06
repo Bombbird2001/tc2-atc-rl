@@ -327,7 +327,7 @@ class AirportArrivalStats(var targetTrafficValue: Int = 6, var arrivalSpawnTimer
 }
 
 /** Component for storing the spawn location grouping of the aircraft */
-data class SpawnGroup(var spawnGroup: Byte, var spawnX: Float, var spawnY: Float): Component {
+data class SpawnGroup(var spawnGroup: Byte, var spawnX: Float, var spawnY: Float, var spawnOrder: Int): Component {
     companion object {
         val mapper = object: Mapper<SpawnGroup>() {}.mapper
 

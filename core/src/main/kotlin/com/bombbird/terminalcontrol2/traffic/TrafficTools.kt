@@ -195,7 +195,7 @@ fun createArrival(callsign: String, icaoType: String, airport: Entity, gs: GameS
     }
     finishArrivalEntitySetup(
         ac, airport, gs, spawnPos.first, spawnPos.second, spawnPos.third, rawAlt,
-        spawnGroup, randomStar.name, starRoute, disableAmendAltForNearbyTraffic = false
+        spawnGroup, -1, randomStar.name, starRoute, disableAmendAltForNearbyTraffic = false
     )
 }
 
@@ -235,6 +235,7 @@ fun createArrival(
     gs: GameServer,
     xPx: Float,
     yPx: Float,
+    spawnOrder: Int,
     altitudeFt: Float,
     trackDeg: Float,
     disableAmendAltForNearbyTraffic: Boolean = false
@@ -262,7 +263,7 @@ fun createArrival(
 
     finishArrivalEntitySetup(
         newAc, airport, gs, xPx, yPx, trackDeg + 180, altitudeFt,
-        spawnGroup, star.name, starRoute, disableAmendAltForNearbyTraffic
+        spawnGroup, spawnOrder,star.name, starRoute, disableAmendAltForNearbyTraffic
     )
 }
 
@@ -275,6 +276,7 @@ private fun finishArrivalEntitySetup(
     oppTrackDeg: Float,
     rawAltitudeFt: Float,
     spawnGroup: Byte,
+    spawnOrder: Int,
     starName: String?,
     starRoute: Route,
     disableAmendAltForNearbyTraffic: Boolean
@@ -325,7 +327,7 @@ private fun finishArrivalEntitySetup(
         if (alt > 10000) entity += DecelerateTo240kts()
         entity += ContactFromCentre(MAX_ALT + MathUtils.random(400, 1500))
         initialiseArrivalRequests(entity)
-        entity += SpawnGroup(spawnGroup, xPx, yPx)
+        entity += SpawnGroup(spawnGroup, xPx, yPx, spawnOrder)
     }
     gs.sendAircraftSpawn(ac)
 }

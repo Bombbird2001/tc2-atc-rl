@@ -74,6 +74,7 @@ object RLStateRestoreTest : FunSpec() {
             ac.entity[SpawnGroup.mapper]!!.spawnGroup = 1
             ac.entity[SpawnGroup.mapper]!!.spawnX = 2f
             ac.entity[SpawnGroup.mapper]!!.spawnY = 2f
+            ac.entity[SpawnGroup.mapper]!!.spawnOrder = 3
             restoreSnapshot(snapshot, gs)
             (ac.entity[Position.mapper]!!.x) shouldBe 150f
             (ac.entity[Position.mapper]!!.y) shouldBe 250f
@@ -93,6 +94,7 @@ object RLStateRestoreTest : FunSpec() {
             (ac.entity[SpawnGroup.mapper]!!.spawnGroup) shouldBe 0
             (ac.entity[SpawnGroup.mapper]!!.spawnX) shouldBe 1f
             (ac.entity[SpawnGroup.mapper]!!.spawnY) shouldBe 1f
+            (ac.entity[SpawnGroup.mapper]!!.spawnOrder) shouldBe 0
         }
 
         test("Clearance state (clearedAlt, clearedIas, vectorHdg, expedite) is restored correctly") {
@@ -638,7 +640,7 @@ object RLStateRestoreTest : FunSpec() {
     private fun addTestAircraft(gs: GameServer, callsign: String, x: Float, y: Float, alt: Float): Aircraft {
         val ac = Aircraft(callsign, x, y, alt, "B738", FlightType.ARRIVAL, false)
         ac.entity.plusAssign(ClearanceAct(ClearanceState().ActingClearance()))
-        ac.entity.plusAssign(SpawnGroup(0, 1f, 1f))
+        ac.entity.plusAssign(SpawnGroup(0, 1f, 1f, 0))
         gs.aircraft.put(callsign, ac)
         return ac
     }

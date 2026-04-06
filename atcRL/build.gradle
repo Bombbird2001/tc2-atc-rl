@@ -69,8 +69,8 @@ jar {
 // this last step may help on some OSes that need extra instruction to make runnable JARs.
 	doLast {
 		file(archiveFile).setExecutable(true, false)
+		println("Built ${jarName}")
 	}
-	println("Built ${jarName}")
 }
 
 // Equivalent to the jar task; here for compatibility with gdx-setup.

@@ -102,12 +102,14 @@ object CsvWriter {
         )
     }
 
-    fun writeAgentLifespan(episode: Int, timePassed: Float, agentGroup: Byte, spawnX: Float, spawnY: Float, lifespanS: Float) {
+    fun writeAgentLifespan(
+        episode: Int, timePassed: Float, agentGroup: Byte, spawnX: Float, spawnY: Float, spawnOrder: Int, lifespanS: Float
+    ) {
         if (!checkRunDir()) return
         writeToCsv(
             RUN_DIR + AGENT_LIFESPAN_FILE,
             listOf("Episode", "Time (s)", "Spawn group", "Spawn X", "Spawn Y", "Spawn order", "Lifespan (s)"),
-            listOf(episode, timePassed, agentGroup, spawnX, spawnY, lifespanS)
+            listOf(episode, timePassed, agentGroup, spawnX, spawnY, spawnOrder.toFloat(), lifespanS)
         )
     }
 

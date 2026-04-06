@@ -154,7 +154,7 @@ class HoldAndDispatch(
         val spawnInfo = aircraft[SpawnGroup.mapper]!!
         CsvWriter.writeAgentLifespan(
             episodeCounter, timePassed, spawnInfo.spawnGroup, spawnInfo.spawnX, spawnInfo.spawnY,
-            timePassed - acSpawnTime[acIndex]
+            spawnInfo.spawnOrder, timePassed - acSpawnTime[acIndex]
         )
         acArray[acIndex] = null
         acSpawnTime[acIndex] = -1f

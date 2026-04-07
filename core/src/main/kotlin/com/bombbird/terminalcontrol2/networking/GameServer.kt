@@ -52,6 +52,7 @@ data class RLHeadlessTrainingConfig(
     val aircraftConflictPenalty: Float,
     val wakeConflictPenalty: Float,
     val randomSpawnChance: Float,
+    val delayedComplianceSeconds: Float,
     /** Absolute path to scripted spawn CSV, or null/blank for random RL spawning only. */
     val scriptedSpawnFile: String? = null,
     /** Absolute output CSV path/dir for conflict-resolution debug snapshots; null/blank disables. */
@@ -67,6 +68,7 @@ internal val DEFAULT_RL_HEADLESS_TRAINING_CONFIG = RLHeadlessTrainingConfig(
     aircraftConflictPenalty = 0f,
     wakeConflictPenalty = 0f,
     randomSpawnChance = 0f,
+    delayedComplianceSeconds = 0f,
     scriptedSpawnFile = null,
     debugSnapshotCsvPath = null,
 )
@@ -138,6 +140,7 @@ class GameServer private constructor(
                     aircraftConflictPenalty = EVAL_AIRCRAFT_CONFLICT_PENALTY,
                     wakeConflictPenalty = EVAL_WAKE_CONFLICT_PENALTY,
                     randomSpawnChance = 0f,
+                    delayedComplianceSeconds = 0f,
                     scriptedSpawnFile = "/Users/bombbird2001/Desktop/tc2-atc-rl/scripted-flights/feb_1.csv",
                     debugSnapshotCsvPath = "/Users/bombbird2001/Desktop/tc2-atc-rl/runs/${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}",
                 ),

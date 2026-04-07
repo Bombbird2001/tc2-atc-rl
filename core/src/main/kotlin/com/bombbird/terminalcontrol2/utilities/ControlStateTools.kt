@@ -7,6 +7,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.Queue
 import com.bombbird.terminalcontrol2.components.*
 import com.bombbird.terminalcontrol2.global.CLIENT_SCREEN
+import com.bombbird.terminalcontrol2.global.DEFAULT_REACTION_TIME
 import com.bombbird.terminalcontrol2.global.GAME
 import com.bombbird.terminalcontrol2.global.HOLD_THRESHOLD_ALTITUDE
 import com.bombbird.terminalcontrol2.navigation.*
@@ -57,14 +58,22 @@ fun addNewClearanceToPendingClearances(aircraft: Entity, clearance: AircraftCont
  * Adds a new [clearance] to the pending clearances for an [aircraft], subtracting half of the [returnTripTime] (in ms)
  * to compensate for network lag if any
  */
-fun addNewClearanceToPendingClearances(aircraft: Entity, clearance: ClearanceState, returnTripTime: Int) {
+fun addNewClearanceToPendingClearances(aircraft: Entity, clearance: ClearanceState, returnTripTime: Int, additionalReactionTime: Float = 0f) {
     val pendingClearances = aircraft[PendingClearances.mapper]
     if (pendingClearances == null) aircraft += PendingClearances(Queue<ClearanceState.PendingClearanceState>().apply {
-        addLast(ClearanceState.PendingClearanceState(max(2f - returnTripTime / 2000f, 0.01f), clearance))
+        addLast(ClearanceState.PendingClearanceState(max(DEFAULT_REACTION_TIME + additionalReactionTime - returnTripTime / 2000f, 0.01f), clearance))
     })
     else pendingClearances.clearanceQueue.apply {
-        val lastTime = last().timeLeft
-        addLast(ClearanceState.PendingClearanceState(max(2f - returnTripTime / 2000f - lastTime, 0.01f), clearance))
+        var lastTime = 0f
+        for (clearance in iterator()) {
+            lastTime += clearance.timeLeft
+        }
+        val newTime = DEFAULT_REACTION_TIME + additionalReactionTime - returnTripTime / 2000f
+        while (lastTime >= newTime) {
+            lastTime -= removeLast().timeLeft
+        }
+        if (lastTime >= newTime) throw IllegalStateException("New time $newTime <= last time $lastTime")
+        addLast(ClearanceState.PendingClearanceState(newTime - lastTime, clearance))
     }
 }
 

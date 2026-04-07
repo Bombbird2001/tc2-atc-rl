@@ -266,7 +266,10 @@ class HoldAndDispatch(
                     val newAlt = max(holdStack.getHighestEnteringHoldAltitude() + holdAltInterval, holdStack.minAlt)
                     newClearance.clearedAlt = newAlt
                     newClearance.deactivateAllAltRestrictions()
-                    addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
+                    addNewClearanceToPendingClearances(
+                        ac.entity, newClearance, 0,
+                        additionalReactionTime = rlConfig.delayedComplianceSeconds
+                    )
 //                    println("Initial clearance for $callsign is $newAlt")
                     holdStack.addAircraftToEnteringHold(ac)
                     assignedStack[callsign] = holdStack
@@ -287,8 +290,14 @@ class HoldAndDispatch(
 //                        val origCurrAlt = currentClearedAlt
                         val toSwapClearance = toSwapOriginal.copy(clearedAlt = currentClearedAlt, route = Route().apply { setToRouteCopy(toSwapOriginal.route) })
                         val newClearance = latestClearance.copy(clearedAlt = currentClearedAlt - holdAltInterval, route = Route().apply { setToRouteCopy(latestClearance.route) })
-                        addNewClearanceToPendingClearances(aircraftToSwapAlts.entity, toSwapClearance, 0)
-                        addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
+                        addNewClearanceToPendingClearances(
+                            aircraftToSwapAlts.entity, toSwapClearance, 0,
+                            additionalReactionTime = rlConfig.delayedComplianceSeconds
+                        )
+                        addNewClearanceToPendingClearances(
+                            ac.entity, newClearance, 0,
+                            additionalReactionTime = rlConfig.delayedComplianceSeconds
+                        )
                         currentClearedAlt -= holdAltInterval
 //                        println("Swapped $callsign to $currentClearedAlt, ${aircraftToSwapAlts.entity[AircraftInfo.mapper]!!.icaoCallsign} to $origCurrAlt")
                     }
@@ -363,10 +372,13 @@ class HoldAndDispatch(
                 if (startLogging) println("Dispatching at time $timePassed\n$dispatchLog")
                 val latestClearance = getLatestClearanceState(ac.entity)!!
                 val newClearance = latestClearance.copy(route = Route().apply { setToRouteCopy(targetApp.routeLegs) }, clearedAlt = 3500, clearedApp = "ILS 02L", clearedTrans = "vectors")
-                addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
+                addNewClearanceToPendingClearances(
+                    ac.entity, newClearance, 0,
+                    additionalReactionTime = rlConfig.delayedComplianceSeconds
+                )
                 val holdInfo = nextStackToDispatchFrom.removeFirstInHoldAircraft()
-                nextStackToDispatchFrom.clearAllHoldingAircraftDownwards()
-                nextStackToDispatchFrom.clearAllPendingEnterAircraftDownwards()
+                nextStackToDispatchFrom.clearAllHoldingAircraftDownwards(rlConfig.delayedComplianceSeconds)
+                nextStackToDispatchFrom.clearAllPendingEnterAircraftDownwards(rlConfig.delayedComplianceSeconds)
                 lastDispatchedInfo = LastDispatchInfo(
                     ac.entity, followerInfo.aircraftPerf.wakeCategory, followerInfo.aircraftPerf.recat,
                     followerInfo.aircraftPerf.appSpd, timePassed, estimatedTravelDistPx

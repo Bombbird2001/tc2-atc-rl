@@ -71,12 +71,14 @@ class HoldStack(
         return inHoldStack.maxOf { hold -> getLatestClearanceState(hold.aircraft.entity)!!.clearedAlt }
     }
 
-    fun clearAllHoldingAircraftDownwards() {
+    fun clearAllHoldingAircraftDownwards(delayedComplianceTime: Float) {
         for (hold in inHoldStack) {
             val ac = hold.aircraft.entity
             val clearance = getLatestClearanceState(ac)!!
             val newClearance = clearance.copy(clearedAlt = clearance.clearedAlt - holdAltInterval, route = Route().apply { setToRouteCopy(clearance.route) })
-            addNewClearanceToPendingClearances(ac, newClearance, 0)
+            addNewClearanceToPendingClearances(
+                ac, newClearance, 0, additionalReactionTime = delayedComplianceTime
+            )
 //            println("Cleared ${ac[AircraftInfo.mapper]!!.icaoCallsign} in hold to ${newClearance.clearedAlt}")
         }
     }
@@ -123,11 +125,13 @@ class HoldStack(
         return null
     }
 
-    fun clearAllPendingEnterAircraftDownwards() {
+    fun clearAllPendingEnterAircraftDownwards(delayedComplianceTime: Float) {
         for (ac in pendingEnterHold) {
             val clearance = getLatestClearanceState(ac.entity)!!
             val newClearance = clearance.copy(clearedAlt = clearance.clearedAlt - holdAltInterval, route = Route().apply { setToRouteCopy(clearance.route) })
-            addNewClearanceToPendingClearances(ac.entity, newClearance, 0)
+            addNewClearanceToPendingClearances(
+                ac.entity, newClearance, 0, additionalReactionTime = delayedComplianceTime
+            )
 //            println("Cleared ${ac.entity[AircraftInfo.mapper]!!.icaoCallsign} pending hold to ${newClearance.clearedAlt}")
         }
     }

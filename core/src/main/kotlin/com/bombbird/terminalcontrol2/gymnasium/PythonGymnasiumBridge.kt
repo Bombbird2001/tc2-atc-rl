@@ -1000,7 +1000,7 @@ class PythonGymnasiumBridge(
             if (changed) {
                 clearanceChangesInCurrentSession++
                 val clearanceState = prevClearance.copy(vectorHdg = clearedHdg, clearedAlt = clearedAlt, clearedIas = clearedIas)
-                addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0)
+                addNewClearanceToPendingClearances(targetAircraft, clearanceState, 0, additionalReactionTime = rlConfig.delayedComplianceSeconds)
             }
         }
 

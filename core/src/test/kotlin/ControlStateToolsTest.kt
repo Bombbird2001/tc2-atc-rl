@@ -35,7 +35,7 @@ object ControlStateToolsTest: FunSpec() {
                 Route().getSerialisedObject(), 55, CommandTarget.TURN_LEFT,
                 15000, false, 250, 190, 340,
                 250, null, null
-            ), 400)
+            ), 300)
             val pendingClearances = entity[PendingClearances.mapper].shouldNotBeNull()
             pendingClearances.clearanceQueue.size shouldBe 2
             val state = pendingClearances.clearanceQueue.first()
@@ -68,7 +68,7 @@ object ControlStateToolsTest: FunSpec() {
             state2.clearanceState.optimalIas shouldBe 250
             state2.clearanceState.clearedApp.shouldBeNull()
             state2.clearanceState.clearedTrans.shouldBeNull()
-            state2.timeLeft shouldBe 0.01f
+            state2.timeLeft shouldBe 0.0125f.plusOrMinus(0.0000001f)
         }
 
         test("Add new clearance to pending clearances - existing pending clearance") {

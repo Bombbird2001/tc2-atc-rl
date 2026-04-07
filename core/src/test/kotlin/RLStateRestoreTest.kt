@@ -543,6 +543,7 @@ object RLStateRestoreTest : FunSpec() {
                     aircraftConflictPenalty = 0.5f,
                     wakeConflictPenalty = 0.5f,
                     randomSpawnChance = 0f,
+                    delayedComplianceSeconds = 0f,
                     scriptedSpawnFile = null,
                 ),
             )

@@ -176,6 +176,9 @@ const val HOLD_THRESHOLD_ALTITUDE = 14050
 /** Threshold IAS for reduced turn rate */
 const val HALF_TURN_RATE_THRESHOLD_IAS = 251
 
+/** Reaction time command issue and pilot reaction */
+const val DEFAULT_REACTION_TIME = 2f
+
 /** Trajectory update time interval */
 const val TRAJECTORY_UPDATE_INTERVAL_S = 5f
 const val MAX_TRAJECTORY_ADVANCE_TIME_S = 90f

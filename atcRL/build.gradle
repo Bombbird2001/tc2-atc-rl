@@ -50,7 +50,7 @@ run {
 }
 
 jar {
-	def jarName = 'build-scripted-spawn-v3.jar'
+	def jarName = 'build-scripted-spawn-v3-delayed-compliance.jar'
 // sets the name of the .jar file this produces to the name of the game or app.
 	archiveFileName.set(jarName)
 // the duplicatesStrategy matters starting in Gradle 7.0; this setting works.
